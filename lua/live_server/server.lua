@@ -5,20 +5,19 @@ local S    = {}
 
 local MIME = {
     html = "text/html; charset=utf-8",
-    htm  = "text/html; charset=utf-8",
-    css  = "text/css; charset=utf-8",
-    js   = "application/javascript; charset=utf-8",
-    mjs  = "application/javascript; charset=utf-8",
+    htm = "text/html; charset=utf-8",
+    css = "text/css; charset=utf-8",
+    js = "application/javascript; charset=utf-8",
+    mjs = "application/javascript; charset=utf-8",
     json = "application/json; charset=utf-8",
-    txt  = "text/plain; charset=utf-8",
-    svg  = "image/svg+xml",
-    png  = "image/png",
-    jpg  = "image/jpeg",
+    txt = "text/plain; charset=utf-8",
+    svg = "image/svg+xml",
+    png = "image/png",
+    jpg = "image/jpeg",
     jpeg = "image/jpeg",
-    gif  = "image/gif",
-    ico  = "image/x-icon",
+    gif = "image/gif",
+    ico = "image/x-icon",
     wasm = "application/wasm",
-    md   = "text/markdown; charset=utf-8",
 }
 
 local function guess_mime(path)
@@ -26,14 +25,13 @@ local function guess_mime(path)
     return (ext and MIME[ext:lower()]) or "application/octet-stream"
 end
 
--- --- HTTP helpers ----------------------------------------------------------
+-- -------- HTTP helpers -----------------------------------------------------
 
 local function write_headers(sock, status, headers)
     local reason = ({
         [200] = "OK", [301] = "Moved Permanently", [302] = "Found", [400] = "Bad Request",
         [404] = "Not Found", [405] = "Method Not Allowed", [500] = "Internal Server Error"
     })[status] or "OK"
-
     local lines = { ("HTTP/1.1 %d %s\r\n"):format(status, reason) }
     for k, v in pairs(headers or {}) do
         table.insert(lines, ("%s: %s\r\n"):format(k, v))
@@ -67,18 +65,18 @@ local function parse_request(buf)
     return { method = m, path = path }
 end
 
--- --- Path mapping & file read ---------------------------------------------
+-- -------- Path mapping & file read ----------------------------------------
 
 local function sanitize_and_map(req_path, root_real)
     local raw = util.url_decode(req_path)
     if raw:find("^/$") then
-        return root_real, true
+        return root_real
     end
     local joined = util.joinpath(root_real, raw:gsub("^/+", ""))
     local ok, real = pcall(uv.fs_realpath, joined)
     if not ok or not real then return nil end
     if not util.path_has_prefix(real, root_real) then return nil end
-    return real, false
+    return real
 end
 
 local function read_file_all(abs_path)
@@ -94,7 +92,7 @@ local function read_file_all(abs_path)
     return chunk, stat
 end
 
--- --- LiveReload (SSE) -----------------------------------------------------
+-- -------- LiveReload (SSE) ------------------------------------------------
 
 local function get_recursive_flag()
     local c = uv.constants or {}
@@ -102,14 +100,12 @@ local function get_recursive_flag()
 end
 
 local CLIENT_JS = table.concat({
-    "!function(){",
-    "try{",
+    "!function(){try{",
     "var es=new EventSource('/__live/events');",
     "es.addEventListener('reload',function(){location.reload();});",
-    "es.onopen=function(){console.log('[live-server.nvim] connected');};",
-    "es.onerror=function(e){console.warn('[live-server.nvim] SSE error',e);};",
-    "}catch(e){console.warn('[live-server.nvim] no EventSource',e)}",
-    "}();",
+    "es.onopen=function(){console.log('[live-server.nvim] connected')};",
+    "es.onerror=function(e){console.warn('[live-server.nvim] SSE error',e)};",
+    "}catch(e){console.warn('[live-server.nvim] no EventSource',e)}}();",
 })
 
 local function sse_accept(inst, sock)
@@ -176,7 +172,7 @@ local function stop_fs_watch(inst)
     inst.fs_event = nil
 end
 
--- --- HTML helpers (injection + templating) --------------------------------
+-- -------- HTML helpers (injection + templating) ---------------------------
 
 local function send_html_with_injection(inst, sock, html, extra_headers)
     if inst.inject_script then
@@ -198,15 +194,14 @@ local function serve_html_file_with_injection(inst, sock, abs_path, extra_header
     send_html_with_injection(inst, sock, body, extra_headers)
 end
 
--- --- Directory listing -----------------------------------------------------
+-- -------- Directory listing -----------------------------------------------
 
 local function dir_listing_html(inst, fs_path, req_path)
     local entries = {}
     local iter = uv.fs_scandir(fs_path)
     if not iter then
-        return "<h2>Cannot read directory</h2>"
+        return "<!doctype html><meta charset=utf-8><h2>Cannot read directory</h2>"
     end
-    -- add parent
     if req_path ~= "/" then
         table.insert(entries, { name = "..", is_dir = true, up = true })
     end
@@ -223,6 +218,7 @@ local function dir_listing_html(inst, fs_path, req_path)
         if a.is_dir ~= b.is_dir then return a.is_dir end
         return a.name:lower() < b.name:lower()
     end)
+
     local rows = {}
     for _, e in ipairs(entries) do
         local label = util.html_escape(e.name)
@@ -250,8 +246,7 @@ local function dir_listing_html(inst, fs_path, req_path)
       table{width:100%;border-collapse:collapse}
       td{padding:6px 8px;border-bottom:1px solid rgba(127,127,127,.2)}
       td.ico{width:2rem;text-align:center}
-      a{text-decoration:none}
-      a:hover{text-decoration:underline}
+      a{text-decoration:none} a:hover{text-decoration:underline}
     </style>
   ]]
     return string.format([[
@@ -260,120 +255,7 @@ local function dir_listing_html(inst, fs_path, req_path)
   ]], util.html_escape(title), css, util.html_escape(title), table.concat(rows))
 end
 
--- --- Markdown renderer (minimal, pure Lua) --------------------------------
-
-local function md_escape_html(s) return util.html_escape(s) end
-
-local function md_inline(s)
-    -- code
-    s = s:gsub("`([^`\n]+)`", "<code>%1</code>")
-    -- bold **text** or __text__
-    s = s:gsub("%*%*([%w%p%s][^*]-)%*%*", "<strong>%1</strong>")
-    s = s:gsub("__([%w%p%s][^_]-)__", "<strong>%1</strong>")
-    -- italic *text* or _text_ (surrounded by non-word)
-    s = s:gsub("(%W)%*([^%*][^%*]-)%*(%W)", "%1<em>%2</em>%3")
-    s = s:gsub("(%W)_([^_][^_]-)_(%W)", "%1<em>%2</em>%3")
-    -- images ![alt](url)
-    s = s:gsub("%!%[([^%]]-)%]%(([^%s%)]+)%)", '<img alt="%1" src="%2" />')
-    -- links [text](url)
-    s = s:gsub("%[([^%]]-)%]%(([^%s%)]+)%)", '<a href="%2">%1</a>')
-    return s
-end
-
-local function markdown_to_html(md, title_fallback)
-    local html = {}
-    local in_code = false
-    local in_ul, in_ol = false, false
-    local title = title_fallback or "Markdown"
-
-    local function close_lists()
-        if in_ul then
-            table.insert(html, "</ul>"); in_ul = false
-        end
-        if in_ol then
-            table.insert(html, "</ol>"); in_ol = false
-        end
-    end
-
-    for line in (md .. "\n"):gmatch("([^\n]*)\n") do
-        -- fenced code
-        local fence = line:match("^%s*```")
-        if fence then
-            if in_code then
-                table.insert(html, "</code></pre>")
-                in_code = false
-            else
-                close_lists()
-                in_code = true
-                table.insert(html, '<pre><code>')
-            end
-        elseif in_code then
-            table.insert(html, md_escape_html(line) .. "\n")
-        else
-            -- headings
-            local hashes, text = line:match("^(#+)%s*(.-)%s*$")
-            if hashes then
-                close_lists()
-                local level = math.min(#hashes, 6)
-                if title == title_fallback and level == 1 and text ~= "" then title = text end
-                table.insert(html, string.format("<h%d>%s</h%d>", level, md_inline(md_escape_html(text)), level))
-                -- hr
-            elseif line:match("^%s*[-*_][-*_%s]+$") then
-                close_lists()
-                table.insert(html, "<hr/>")
-                -- lists
-            elseif line:match("^%s*[%-%*]%s+") then
-                if in_ol then
-                    table.insert(html, "</ol>"); in_ol = false
-                end
-                if not in_ul then
-                    table.insert(html, "<ul>"); in_ul = true
-                end
-                local item = line:gsub("^%s*[%-%*]%s+", "")
-                table.insert(html, "<li>" .. md_inline(md_escape_html(item)) .. "</li>")
-            elseif line:match("^%s*%d+%.%s+") then
-                if in_ul then
-                    table.insert(html, "</ul>"); in_ul = false
-                end
-                if not in_ol then
-                    table.insert(html, "<ol>"); in_ol = true
-                end
-                local item = line:gsub("^%s*%d+%.%s+", "")
-                table.insert(html, "<li>" .. md_inline(md_escape_html(item)) .. "</li>")
-                -- paragraph / blank
-            else
-                close_lists()
-                if line:match("^%s*$") then
-                    table.insert(html, "")
-                else
-                    table.insert(html, "<p>" .. md_inline(md_escape_html(line)) .. "</p>")
-                end
-            end
-        end
-    end
-    close_lists()
-
-    local css = [[
-    <style>
-      :root{color-scheme:light dark}
-      body{font:16px/1.6 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;max-width:900px;margin:auto}
-      pre{background:rgba(127,127,127,.12);padding:12px;border-radius:8px;overflow:auto}
-      code{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
-      h1,h2,h3{margin-top:1.2em}
-      hr{border:none;border-top:1px solid rgba(127,127,127,.3);margin:1.5em 0}
-      ul,ol{padding-left:1.4em}
-      img{max-width:100%}
-      a{text-decoration:none} a:hover{text-decoration:underline}
-    </style>
-  ]]
-    local doc = string.format(
-        "<!doctype html><html><head><meta charset='utf-8'><title>%s</title>%s</head><body>%s</body></html>",
-        util.html_escape(title), css, table.concat(html, "\n")
-    )
-    return doc
-end
-
--- --- Static file streaming -------------------------------------------------
+-- -------- Static file streaming -------------------------------------------
 
 local function stream_file(sock, abs_path, extra_headers)
     local fd = uv.fs_open(abs_path, "r", 438)
@@ -383,9 +265,11 @@ local function stream_file(sock, abs_path, extra_headers)
         uv.fs_close(fd)
         return http_404(sock, abs_path)
     end
+
     local headers = { ["Content-Type"] = guess_mime(abs_path), ["Content-Length"] = stat.size, ["Connection"] = "close" }
     for k, v in pairs(extra_headers or {}) do headers[k] = v end
     write_headers(sock, 200, headers)
+
     local offset = 0
     local function read_chunk()
         uv.fs_read(fd, 64 * 1024, offset, function(err_read, data)
@@ -412,26 +296,19 @@ local function serve_path(inst, sock, abs_path, req_path, extra_headers)
     local mime = guess_mime(abs_path)
     if mime:find("^text/html") then
         return serve_html_file_with_injection(inst, sock, abs_path, extra_headers)
-    elseif mime:find("markdown") and inst.md_enabled then
-        local md = read_file_all(abs_path)
-        if not md then return http_404(sock, abs_path) end
-        local html = markdown_to_html(md, util.basename(abs_path))
-        return send_html_with_injection(inst, sock, html, extra_headers)
     else
-        return stream_file(inst, abs_path, extra_headers)
+        return stream_file(sock, abs_path, extra_headers)
     end
 end
 
--- --- Public server API -----------------------------------------------------
+-- -------- Public server API -----------------------------------------------
 
----@param cfg {port:integer, root:string, default_index:string|nil, headers:table|nil,
----@param live {enabled:boolean, inject_script:boolean, debounce:integer}|nil,
----@param features {dirlist:{enabled:boolean, show_hidden:boolean}|nil, markdown:{enabled:boolean}|nil}}
+-- cfg: { port, root, default_index|nil, headers, live={enabled,inject_script,debounce}, features={dirlist={enabled,show_hidden}} }
 function S.start(cfg)
     local tcp = uv.new_tcp()
-    tcp:setkeepalive(true, 60)
-    local ok, err = tcp:bind("127.0.0.1", cfg.port)
-    if not ok then error(err or "bind failed") end
+    -- bind may throw on EADDRINUSE in some luv builds
+    local ok, bind_err = pcall(function() tcp:bind("127.0.0.1", cfg.port) end)
+    if not ok then error(bind_err or "bind failed") end
 
     local root_real = uv.fs_realpath(cfg.root)
     if not root_real then error("Invalid root: " .. tostring(cfg.root)) end
@@ -455,68 +332,64 @@ function S.start(cfg)
         -- features
         dir_enabled     = not (cfg.features and cfg.features.dirlist and cfg.features.dirlist.enabled == false),
         dir_show_hidden = cfg.features and cfg.features.dirlist and cfg.features.dirlist.show_hidden or false,
-        md_enabled      = not (cfg.features and cfg.features.markdown and cfg.features.markdown.enabled == false),
     }
 
     if inst.live_enabled then start_fs_watch(inst) end
 
-    tcp:listen(128, function(err_listen)
-        if err_listen then return end
-        local sock = uv.new_tcp()
-        tcp:accept(sock)
-        sock:read_start(function(err_read, chunk)
-            if err_read then
-                sock:close()
-                return
-            end
-            if not chunk then
-                sock:close()
-                return
-            end
-
-            local req = parse_request(chunk)
-            if not req then return http_400(sock, "Cannot parse request") end
-            if req.method ~= "GET" then
-                return send_response(sock, 405, { ["Content-Type"] = "text/plain" }, "Method Not Allowed")
-            end
-
-            -- Special endpoints
-            if req.path == "/__live/script.js" then
-                return send_response(sock, 200, { ["Content-Type"] = "application/javascript; charset=utf-8" }, CLIENT_JS)
-            elseif req.path == "/__live/events" then
-                return sse_accept(inst, sock)
-            end
-
-            -- Map to FS
-            local mapped = sanitize_and_map(req.path, inst.root_real)
-            if not mapped then return http_404(sock, req.path) end
-
-            local stat = uv.fs_stat(mapped)
-            if stat and stat.type == "directory" then
-                -- prefer explicit index, then index.html, then README.md (as HTML) else listing
-                local candidate = inst.default_index or util.joinpath(mapped, "index.html")
-                if candidate and uv.fs_stat(candidate) then
-                    return serve_path(inst, sock, candidate, req.path, inst.headers)
+    ok, bind_err = pcall(function()
+        tcp:listen(128, function(err_listen)
+            if err_listen then return end
+            local sock = uv.new_tcp()
+            tcp:accept(sock)
+            sock:read_start(function(err_read, chunk)
+                if err_read then
+                    sock:close()
+                    return
                 end
-                local readme = util.joinpath(mapped, "README.md")
-                if inst.md_enabled and uv.fs_stat(readme) then
-                    local md = read_file_all(readme)
-                    local html = markdown_to_html(md, "README")
-                    return send_html_with_injection(inst, sock, html, inst.headers)
+                if not chunk then
+                    sock:close()
+                    return
                 end
-                if inst.dir_enabled then
-                    local html = dir_listing_html(inst, mapped, req.path)
-                    return send_html_with_injection(inst, sock, html, inst.headers)
+
+                local req = parse_request(chunk)
+                if not req then return http_400(sock, "Cannot parse request") end
+                if req.method ~= "GET" then
+                    return send_response(sock, 405, { ["Content-Type"] = "text/plain" }, "Method Not Allowed")
+                end
+
+                -- Special endpoints
+                if req.path == "/__live/script.js" then
+                    return send_response(sock, 200, { ["Content-Type"] = "application/javascript; charset=utf-8" },
+                        CLIENT_JS)
+                elseif req.path == "/__live/events" then
+                    return sse_accept(inst, sock)
+                end
+
+                -- Map path
+                local mapped = sanitize_and_map(req.path, inst.root_real)
+                if not mapped then return http_404(sock, req.path) end
+
+                local st = uv.fs_stat(mapped)
+                if st and st.type == "directory" then
+                    local candidate = inst.default_index or util.joinpath(mapped, "index.html")
+                    if candidate and uv.fs_stat(candidate) then
+                        return serve_path(inst, sock, candidate, req.path, inst.headers)
+                    end
+                    if inst.dir_enabled then
+                        local html = dir_listing_html(inst, mapped, req.path)
+                        return send_html_with_injection(inst, sock, html, inst.headers)
+                    else
+                        return http_404(sock, req.path .. " (no index)")
+                    end
+                elseif st and st.type == "file" then
+                    return serve_path(inst, sock, mapped, req.path, inst.headers)
                 else
-                    return http_404(sock, req.path .. " (no index)")
+                    return http_404(sock, req.path)
                 end
-            elseif stat and stat.type == "file" then
-                return serve_path(inst, sock, mapped, req.path, inst.headers)
-            else
-                return http_404(sock, req.path)
-            end
+            end)
         end)
     end)
+    if not ok then error(bind_err or "listen failed") end
 
     return inst
 end
@@ -554,18 +427,5 @@ function S.enable_live(inst, enable)
 end
 
 function S.is_live_enabled(inst) return inst.live_enabled end
-
--- Feature toggles (dir listing / markdown)
-function S.set_dirlist(inst, enable)
-    inst.dir_enabled = not not enable; return inst.dir_enabled
-end
-
-function S.is_dirlist_enabled(inst) return inst.dir_enabled end
-
-function S.set_markdown(inst, enable)
-    inst.md_enabled = not not enable; return inst.md_enabled
-end
-
-function S.is_markdown_enabled(inst) return inst.md_enabled end
 
 return S

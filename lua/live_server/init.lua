@@ -11,9 +11,9 @@ local defaults = {
     headers = { ["Cache-Control"] = "no-cache" },
 
     live_reload = {
-        enabled = true,   -- watch files and push SSE “reload” to clients
+        enabled = true,       -- watch files and push SSE “reload” to clients
         inject_script = true, -- auto-inject <script src="/__live/script.js"> into served HTML
-        debounce = 120,   -- ms debounce for rapid FS changes
+        debounce = 120,       -- ms debounce for rapid FS changes
     },
 
     directory_listing = {

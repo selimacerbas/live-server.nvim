@@ -1,5 +1,4 @@
 local uv = vim.loop
-
 local U = {}
 
 function U.notify(msg, opts, level)
@@ -12,13 +11,9 @@ function U.joinpath(...)
     return table.concat({ ... }, sep)
 end
 
-function U.dirname(p)
-    return p:match("^(.*)[/\\]") or "."
-end
+function U.dirname(p) return p:match("^(.*)[/\\]") or "." end
 
-function U.basename(p)
-    return (p:gsub("[/\\]+$", "")):match("([^/\\]+)$") or p
-end
+function U.basename(p) return (p:gsub("[/\\]+$", "")):match("([^/\\]+)$") or p end
 
 function U.find_git_root()
     local cwd = uv.cwd()
@@ -41,9 +36,7 @@ function U.url_decode(s)
 end
 
 function U.url_encode(s)
-    return (tostring(s):gsub("([^%w%-%._~])", function(c)
-        return string.format("%%%02X", string.byte(c))
-    end))
+    return (tostring(s):gsub("([^%w%-%._~])", function(c) return string.format("%%%02X", string.byte(c)) end))
 end
 
 function U.html_escape(s)
@@ -51,21 +44,13 @@ function U.html_escape(s)
     return (tostring(s):gsub("[&<>\"]", map):gsub("'", map["'"]))
 end
 
-function U.path_has_prefix(path, prefix)
-    if not path or not prefix then return false end
-    if #prefix == 1 and (prefix == "/" or prefix == "\\") then return true end
-    local norm_p = path:gsub("[/\\]+", "/")
-    local norm_x = prefix:gsub("[/\\]+", "/")
-    return norm_p:sub(1, #norm_x) == norm_x
-end
-
--- Browser open (nvim 0.10+), with portable fallbacks
+-- Open URL in default browser (portable)
 function U.open_browser(url)
     if vim.ui and vim.ui.open then
         local ok = pcall(vim.ui.open, url)
         if ok then return end
     end
-    local sys = (jit and jit.os) or vim.loop.os_uname().sysname
+    local sys = (jit and jit.os) or uv.os_uname().sysname
     if sys == "Windows" or sys == "Windows_NT" then
         vim.schedule(function() vim.fn.jobstart({ "cmd.exe", "/c", "start", "", url }, { detach = true }) end)
     elseif sys == "OSX" or sys == "Darwin" then
@@ -75,27 +60,22 @@ function U.open_browser(url)
     end
 end
 
--- Telescope present?
-local function has_telescope()
-    local ok = pcall(require, "telescope")
-    return ok
-end
+-- Telescope presence
+local function has_telescope() return pcall(require, "telescope") end
 
--- generic list picker
+-- Generic list picker
 function U.pick_list(opts, cb)
     local title = (opts and opts.title) or "Select"
     local items = (opts and opts.items) or {}
     if has_telescope() then
-        local pickers      = require("telescope.pickers")
-        local finders      = require("telescope.finders")
-        local conf         = require("telescope.config").values
-        local actions      = require("telescope.actions")
-        local action_state = require("telescope.actions.state")
+        local pickers, finders, conf = require("telescope.pickers"), require("telescope.finders"),
+            require("telescope.config").values
+        local actions, action_state = require("telescope.actions"), require("telescope.actions.state")
         pickers.new({}, {
             prompt_title = title,
             finder = finders.new_table({ results = items }),
             sorter = conf.generic_sorter({}),
-            attach_mappings = function(prompt_bufnr, _map)
+            attach_mappings = function(prompt_bufnr, _)
                 actions.select_default:replace(function()
                     local entry = action_state.get_selected_entry()
                     actions.close(prompt_bufnr)
@@ -110,7 +90,112 @@ function U.pick_list(opts, cb)
     end
 end
 
--- specialized port picker
+-- Directory scanner (simple, bounded depth)
+local function scan_dirs(root, maxdepth, limit)
+    maxdepth = maxdepth or 3
+    limit = limit or 500
+    local res, q = {}, { { root, 0 } }
+    while #q > 0 and #res < limit do
+        local item = table.remove(q, 1)
+        local dir, depth = item[1], item[2]
+        local it = uv.fs_scandir(dir)
+        if it then
+            while true do
+                local name, t = uv.fs_scandir_next(it)
+                if not name then break end
+                if t == "directory" then
+                    local full = U.joinpath(dir, name)
+                    table.insert(res, full)
+                    if depth < maxdepth then table.insert(q, { full, depth + 1 }) end
+                end
+            end
+        end
+    end
+    table.sort(res)
+    return res
+end
+
+-- Path picker (Telescope-first): choose file OR directory
+function U.pick_path(cb)
+    if has_telescope() then
+        local pickers, finders, conf = require("telescope.pickers"), require("telescope.finders"),
+            require("telescope.config").values
+        local actions, action_state = require("telescope.actions"), require("telescope.actions.state")
+        local cwd = uv.cwd()
+        local menu = {
+            { "📄 Pick a file…", "__PICK_FILE__" },
+            { "📁 Pick a directory…", "__PICK_DIR__" },
+            { "📌 Current file", "__CUR_FILE__" },
+            { "📂 Current directory", "__CUR_DIR__" },
+        }
+        local git_root = U.find_git_root()
+        if git_root then table.insert(menu, { "🪵 Git root", "__GIT_ROOT__" }) end
+
+        pickers.new({}, {
+            prompt_title = "LiveServer — Choose path",
+            finder = finders.new_table({
+                results = menu,
+                entry_maker = function(e) return { value = e[2], display = e[1], ordinal = e[1] } end,
+            }),
+            sorter = conf.generic_sorter({}),
+            attach_mappings = function(prompt_bufnr, _)
+                actions.select_default:replace(function()
+                    local entry = action_state.get_selected_entry()
+                    actions.close(prompt_bufnr)
+                    local tag = entry and entry.value
+                    if tag == "__PICK_FILE__" then
+                        require("telescope.builtin").find_files({
+                            prompt_title = "LiveServer — Pick file",
+                            cwd = cwd,
+                            attach_mappings = function(pb)
+                                actions.select_default:replace(function()
+                                    local e = action_state.get_selected_entry()
+                                    actions.close(pb)
+                                    cb(e and (e.path or e.filename or e[1]))
+                                end); return true
+                            end,
+                        })
+                    elseif tag == "__PICK_DIR__" then
+                        local dirs = scan_dirs(cwd, 4, 800)
+                        if #dirs == 0 then return cb(cwd) end
+                        U.pick_list({ title = "Pick directory", items = dirs }, cb)
+                    elseif tag == "__CUR_FILE__" then
+                        local f = vim.api.nvim_buf_get_name(0)
+                        if f == "" then
+                            U.notify("No current file.", { notify = true }, "WARN"); return
+                        end
+                        cb(f)
+                    elseif tag == "__CUR_DIR__" then
+                        cb(cwd)
+                    elseif tag == "__GIT_ROOT__" then
+                        cb(git_root)
+                    end
+                end)
+                return true
+            end,
+        }):find()
+    else
+        -- Fallback: simple UI
+        vim.ui.select({ "Pick file", "Pick directory", "Current file", "Current directory" },
+            { prompt = "LiveServer — Choose path" }, function(choice)
+            if choice == "Pick file" then
+                vim.ui.input({ prompt = "File path: " }, cb)
+            elseif choice == "Pick directory" then
+                vim.ui.input({ prompt = "Directory path: ", default = uv.cwd() }, cb)
+            elseif choice == "Current file" then
+                local f = vim.api.nvim_buf_get_name(0)
+                if f == "" then
+                    U.notify("No current file.", { notify = true }, "WARN"); return
+                end
+                cb(f)
+            elseif choice == "Current directory" then
+                cb(uv.cwd())
+            end
+        end)
+    end
+end
+
+-- Port picker
 function U.pick_port(opts, cb)
     local default = tostring((opts and opts.default) or 4070)
     local known = {}
