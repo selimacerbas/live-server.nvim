@@ -94,11 +94,6 @@ end
 
 -- -------- LiveReload (SSE) ------------------------------------------------
 
-local function get_recursive_flag()
-    local c = uv.constants or {}
-    return c.FS_EVENT_RECURSIVE or c.UV_FS_EVENT_RECURSIVE or c.FSEVENT_RECURSIVE or 0
-end
-
 local CLIENT_JS = table.concat({
     "!function(){try{",
     "var es=new EventSource('/__live/events');",
@@ -154,14 +149,21 @@ local function schedule_reload(inst, changed_path)
     end)
 end
 
+-- NOTE: luv has two signatures across versions:
+--   start(path, opts_table, cb)  -- modern (expects table)
+--   start(path, cb)              -- older (no options)
 local function start_fs_watch(inst)
     if inst.fs_event then pcall(function() inst.fs_event:stop() end) end
     inst.fs_event = uv.new_fs_event()
-    local flags = get_recursive_flag()
-    inst.fs_event:start(inst.root_real, flags, function(err, _fname, _status)
+    local cb = function(err, _fname, _status)
         if err then return end
         schedule_reload(inst, _fname or "")
-    end)
+    end
+    local ok = pcall(function() inst.fs_event:start(inst.root_real, { recursive = true }, cb) end)
+    if not ok then
+        -- fallback: non-recursive / legacy signature
+        pcall(function() inst.fs_event:start(inst.root_real, cb) end)
+    end
 end
 
 local function stop_fs_watch(inst)
@@ -297,6 +299,7 @@ local function serve_path(inst, sock, abs_path, req_path, extra_headers)
     if mime:find("^text/html") then
         return serve_html_file_with_injection(inst, sock, abs_path, extra_headers)
     else
+        -- FIX: correct call signature (no `inst` param here)
         return stream_file(sock, abs_path, extra_headers)
     end
 end
@@ -306,7 +309,6 @@ end
 -- cfg: { port, root, default_index|nil, headers, live={enabled,inject_script,debounce}, features={dirlist={enabled,show_hidden}} }
 function S.start(cfg)
     local tcp = uv.new_tcp()
-    -- bind may throw on EADDRINUSE in some luv builds
     local ok, bind_err = pcall(function() tcp:bind("127.0.0.1", cfg.port) end)
     if not ok then error(bind_err or "bind failed") end
 
