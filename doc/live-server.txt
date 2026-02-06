@@ -209,7 +209,7 @@ live_server.status()                            *live_server.status()*
     Print running servers with port, root, uptime, live state, and
     connected client count via `vim.notify`.
 
-live_server.statusline()                        *live_server.statusline()*
+live_server.statusline()
     Returns a short string for statusline use. See |live-server-statusline|.
 
 live_server.stop_one()                          *live_server.stop_one()*
