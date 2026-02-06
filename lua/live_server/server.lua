@@ -49,12 +49,23 @@ local function send_response(sock, status, headers, body)
     sock:shutdown(function() sock:close() end)
 end
 
+local function error_page(status, title, detail)
+    return string.format(
+        '<!doctype html><html><head><meta charset="utf-8"><title>%d %s</title>'
+        .. '<style>:root{color-scheme:light dark}'
+        .. 'body{font:16px/1.6 system-ui,sans-serif;padding:40px;max-width:600px;margin:80px auto;text-align:center}'
+        .. 'h1{font-size:48px;margin:0;opacity:.3}p{opacity:.7}'
+        .. 'code{background:rgba(127,127,127,.15);padding:2px 8px;border-radius:4px;font-size:14px}'
+        .. '</style></head><body><h1>%d</h1><p>%s</p><p><code>%s</code></p></body></html>',
+        status, util.html_escape(title), status, util.html_escape(title), util.html_escape(detail))
+end
+
 local function http_404(sock, path)
-    send_response(sock, 404, { ["Content-Type"] = "text/plain; charset=utf-8" }, "404 Not Found: " .. path)
+    send_response(sock, 404, { ["Content-Type"] = "text/html; charset=utf-8" }, error_page(404, "Not Found", path))
 end
 
 local function http_400(sock, msg)
-    send_response(sock, 400, { ["Content-Type"] = "text/plain; charset=utf-8" }, "400 " .. (msg or "Bad Request"))
+    send_response(sock, 400, { ["Content-Type"] = "text/html; charset=utf-8" }, error_page(400, "Bad Request", msg or ""))
 end
 
 local function parse_request(buf)
@@ -68,7 +79,8 @@ end
 -- -------- Path mapping & file read ----------------------------------------
 
 local function sanitize_and_map(req_path, root_real)
-    local raw = util.url_decode(req_path)
+    local raw = req_path:match("^([^?#]*)") or req_path
+    raw = util.url_decode(raw)
     if raw:find("^/$") then
         return root_real
     end
@@ -97,7 +109,12 @@ end
 local CLIENT_JS = table.concat({
     "!function(){try{",
     "var es=new EventSource('/__live/events');",
-    "es.addEventListener('reload',function(){location.reload();});",
+    "es.addEventListener('reload',function(e){",
+    "var d;try{d=JSON.parse(e.data)}catch(_){d={}}",
+    "if(d.css){var ls=document.querySelectorAll('link[rel=\"stylesheet\"]');",
+    "if(ls.length){ls.forEach(function(l){var h=l.href.replace(/[?&]_lr=\\d+/,'');",
+    "l.href=h+(h.indexOf('?')>-1?'&':'?')+'_lr='+Date.now()});return}}",
+    "location.reload()});",
     "es.onopen=function(){console.log('[live-server.nvim] connected')};",
     "es.onerror=function(e){console.warn('[live-server.nvim] SSE error',e)};",
     "}catch(e){console.warn('[live-server.nvim] no EventSource',e)}}();",
@@ -114,13 +131,13 @@ local function sse_accept(inst, sock)
     table.insert(inst.sse_clients, sock)
     sock:read_start(function(err, chunk)
         if err or not chunk then
-            sock:close()
             for i, cl in ipairs(inst.sse_clients) do
                 if cl == sock then
                     table.remove(inst.sse_clients, i)
                     break
                 end
             end
+            pcall(function() sock:close() end)
         end
     end)
 end
@@ -142,6 +159,9 @@ end
 
 local function schedule_reload(inst, changed_path)
     if not inst.live_enabled then return end
+    if changed_path and changed_path ~= "" and #inst.ignore_patterns > 0 then
+        if util.match_ignore(changed_path, inst.ignore_patterns) then return end
+    end
     inst._last_change = changed_path or inst._last_change
     inst.debounce_timer:stop()
     inst.debounce_timer:start(inst.live_debounce, 0, function()
@@ -299,7 +319,6 @@ local function serve_path(inst, sock, abs_path, req_path, extra_headers)
     if mime:find("^text/html") then
         return serve_html_file_with_injection(inst, sock, abs_path, extra_headers)
     else
-        -- FIX: correct call signature (no `inst` param here)
         return stream_file(sock, abs_path, extra_headers)
     end
 end
@@ -315,25 +334,34 @@ function S.start(cfg)
     local root_real = uv.fs_realpath(cfg.root)
     if not root_real then error("Invalid root: " .. tostring(cfg.root)) end
 
+    local headers = vim.tbl_extend("keep", cfg.headers or {}, {})
+    if cfg.cors then
+        headers["Access-Control-Allow-Origin"] = type(cfg.cors) == "string" and cfg.cors or "*"
+    end
+
     local inst = {
-        handle          = tcp,
-        port            = cfg.port,
-        root            = cfg.root,
-        root_real       = root_real,
-        default_index   = cfg.default_index,
-        headers         = cfg.headers or {},
-        started_at      = os.time(),
+        handle           = tcp,
+        port             = cfg.port,
+        root             = cfg.root,
+        root_real        = root_real,
+        default_index    = cfg.default_index,
+        headers          = headers,
+        started_at       = os.time(),
 
         -- live
-        live_enabled    = cfg.live and cfg.live.enabled ~= false,
-        inject_script   = cfg.live and cfg.live.inject_script ~= false,
-        live_debounce   = (cfg.live and cfg.live.debounce) or 120,
-        sse_clients     = {},
-        debounce_timer  = uv.new_timer(),
+        live_enabled     = cfg.live and cfg.live.enabled ~= false,
+        inject_script    = cfg.live and cfg.live.inject_script ~= false,
+        live_debounce    = (cfg.live and cfg.live.debounce) or 120,
+        css_inject       = cfg.live and cfg.live.css_inject ~= false,
+        sse_clients      = {},
+        debounce_timer   = uv.new_timer(),
 
         -- features
-        dir_enabled     = not (cfg.features and cfg.features.dirlist and cfg.features.dirlist.enabled == false),
-        dir_show_hidden = cfg.features and cfg.features.dirlist and cfg.features.dirlist.show_hidden or false,
+        dir_enabled      = not (cfg.features and cfg.features.dirlist and cfg.features.dirlist.enabled == false),
+        dir_show_hidden  = cfg.features and cfg.features.dirlist and cfg.features.dirlist.show_hidden or false,
+        index_names      = cfg.index_names or { "index.html", "index.htm" },
+        ignore_patterns  = util.parse_liveignore(root_real),
+        notify_on_reload = cfg.notify_on_reload or false,
     }
 
     if inst.live_enabled then start_fs_watch(inst) end
@@ -373,7 +401,15 @@ function S.start(cfg)
 
                 local st = uv.fs_stat(mapped)
                 if st and st.type == "directory" then
-                    local candidate = inst.default_index or util.joinpath(mapped, "index.html")
+                    local candidate
+                    if inst.default_index and mapped == inst.root_real then
+                        candidate = inst.default_index
+                    else
+                        for _, iname in ipairs(inst.index_names) do
+                            local try = util.joinpath(mapped, iname)
+                            if uv.fs_stat(try) then candidate = try; break end
+                        end
+                    end
                     if candidate and uv.fs_stat(candidate) then
                         return serve_path(inst, sock, candidate, req.path, inst.headers)
                     end
@@ -411,13 +447,22 @@ function S.update_target(inst, new_root, new_index)
     inst.root = new_root
     inst.root_real = uv.fs_realpath(new_root) or inst.root_real
     inst.default_index = new_index
+    inst.ignore_patterns = util.parse_liveignore(inst.root_real)
     if inst.live_enabled then start_fs_watch(inst) end
 end
 
 -- Live-reload controls
 function S.reload(inst, reason_path)
-    local payload = ('{"ts":%d,"path":%q}'):format(os.time(), tostring(reason_path or ""))
+    local rp = tostring(reason_path or "")
+    local is_css = inst.css_inject and rp:match("%.css$")
+    local payload = ('{"ts":%d,"path":%q,"css":%s}'):format(os.time(), rp, is_css and "true" or "false")
     sse_broadcast(inst, "reload", payload)
+    if inst.notify_on_reload then
+        vim.schedule(function()
+            util.notify(("Reload%s → %s"):format(is_css and " (CSS)" or "", rp ~= "" and rp or "manual"),
+                { notify = true })
+        end)
+    end
 end
 
 function S.enable_live(inst, enable)

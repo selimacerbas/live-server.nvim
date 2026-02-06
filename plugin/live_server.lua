@@ -20,6 +20,15 @@ vim.api.nvim_create_user_command("LiveServerStop", function()
     LS.stop_one()
 end, { desc = "LiveServer: stop one (pick port)" })
 
+vim.api.nvim_create_user_command("LiveServerStatus", function()
+    LS.status()
+end, { desc = "LiveServer: show running servers" })
+
 vim.api.nvim_create_user_command("LiveServerStopAll", function()
     LS.stop_all()
 end, { desc = "LiveServer: stop all" })
+
+vim.api.nvim_create_autocmd("VimLeavePre", {
+    callback = function() LS.stop_all() end,
+    desc = "LiveServer: stop all servers on exit",
+})

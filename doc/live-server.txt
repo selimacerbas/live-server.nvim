@@ -1,0 +1,259 @@
+*live-server.txt*            Pure-Lua local web server with live-reload
+
+Author: Selim Acerbaş
+Homepage: <https://github.com/selimacerbas/live-server.nvim>
+License: MIT
+
+===============================================================================
+INTRODUCTION                                                *live-server.nvim*
+
+live-server.nvim is a tiny, zero-dependency local web server for Neovim,
+written in pure Lua with `vim.loop`. Start a server on any file or folder,
+auto-reload the browser on file changes, and quickly reopen existing ports.
+
+No npm. No Python. No binaries. Just Lua.
+
+Features:
+- SSE live-reload with debouncing
+- CSS hot-inject (swap stylesheets without full page reload)
+- Directory listing when no index file exists
+- Telescope integration for path and port picking
+- Same-port retargeting (reuses the browser tab)
+- Auto-start on filetype
+- Statusline component
+- `.liveignore` support
+- CORS headers
+- Styled error pages (dark-mode aware)
+
+The server binds to `127.0.0.1` only. It is meant for local dev previews,
+not production.
+
+===============================================================================
+REQUIREMENTS                                    *live-server-requirements*
+
+- Neovim 0.8+ (tested on 0.9 / 0.10)
+- Linux, macOS, or Windows
+
+Optional:
+- telescope.nvim — better path/port picker UX
+- which-key.nvim — keymap group labels
+
+===============================================================================
+COMMANDS                                        *live-server-commands*
+
+                                                *:LiveServerStart*
+:LiveServerStart        Pick a path (file or directory) and a port, then
+                        start the server. If the port is already in use by
+                        this plugin, the server retargets to the new path.
+
+                                                *:LiveServerOpen*
+:LiveServerOpen         Pick a port and open `http://127.0.0.1:<port>/` in
+                        the default browser.
+
+                                                *:LiveServerReload*
+:LiveServerReload       Pick a port and broadcast a manual reload event to
+                        all connected browser clients.
+
+                                                *:LiveServerToggleLive*
+:LiveServerToggleLive   Pick a port and toggle file watching + live-reload
+                        on or off for that server.
+
+                                                *:LiveServerStatus*
+:LiveServerStatus       Show all running servers with port, root directory,
+                        uptime, live-reload state, and connected client count.
+
+                                                *:LiveServerStop*
+:LiveServerStop         Pick a running port and stop that server.
+
+                                                *:LiveServerStopAll*
+:LiveServerStopAll      Stop all running servers.
+
+===============================================================================
+CONFIGURATION                                   *live-server-config*
+
+Configure via |live_server.setup()| or `opts` in your lazy.nvim spec. >lua
+
+    require("live_server").setup({
+      default_port     = 8000,
+      open_on_start    = true,
+      notify           = true,
+      notify_on_reload = false,
+      headers          = { ["Cache-Control"] = "no-cache" },
+      cors             = false,
+      index_names      = { "index.html", "index.htm" },
+      auto_start       = nil,
+
+      live_reload = {
+        enabled       = true,
+        inject_script = true,
+        debounce      = 120,
+        css_inject    = true,
+      },
+
+      directory_listing = {
+        enabled     = true,
+        show_hidden = false,
+      },
+    })
+<
+
+                                                *live-server-options*
+Options:
+
+`default_port` (number, default 8000)
+    Default port suggestion in the port picker.
+
+`open_on_start` (boolean, default true)
+    Open the browser automatically after starting or retargeting.
+
+`notify` (boolean, default true)
+    Show `vim.notify` messages for server events.
+
+`notify_on_reload` (boolean, default false)
+    Show a notification on every live-reload event.
+
+`headers` (table, default `{ ["Cache-Control"] = "no-cache" }`)
+    Extra HTTP response headers added to all served files.
+
+`cors` (boolean|string, default false)
+    Add `Access-Control-Allow-Origin` header to responses.
+    `true` or `"*"` allows all origins. A string like
+    `"http://localhost:3000"` allows a specific origin.
+
+`index_names` (string[], default `{ "index.html", "index.htm" }`)
+    Index file names to try when serving a directory, in order.
+
+`auto_start` (table|nil, default nil)                   *live-server-auto-start*
+    Automatically start a server when a matching filetype is opened.
+    The server starts once per directory (no duplicates). >lua
+        auto_start = { filetypes = { "html" }, port = 8000 }
+<
+    Fields:
+    - `filetypes` (string[]) — Neovim filetypes to trigger on.
+    - `port` (number, optional) — Port to use. Falls back to `default_port`.
+
+`live_reload.enabled` (boolean, default true)
+    Watch files under the served root and push SSE reload events.
+
+`live_reload.inject_script` (boolean, default true)
+    Inject `<script src="/__live/script.js">` into HTML responses.
+
+`live_reload.debounce` (number, default 120)
+    Milliseconds to debounce rapid file changes before reloading.
+
+`live_reload.css_inject` (boolean, default true)        *live-server-css-inject*
+    When a `.css` file changes, hot-swap stylesheets in the browser
+    without a full page reload. DOM state is preserved.
+
+`directory_listing.enabled` (boolean, default true)
+    Show a styled directory index when no index file is found.
+
+`directory_listing.show_hidden` (boolean, default false)
+    Include dotfiles in directory listings.
+
+===============================================================================
+LIVEIGNORE                                      *live-server-liveignore*
+
+Create a `.liveignore` file in the served root to exclude files from the
+file watcher. One pattern per line. `*` matches any characters. Lines
+starting with `#` are comments. >
+
+    # Skip these
+    node_modules
+    *.log
+    .git
+    dist
+<
+The ignore file is re-parsed when the server retargets to a new root.
+
+===============================================================================
+STATUSLINE                                      *live-server-statusline*
+
+                                                *live_server.statusline()*
+live_server.statusline()
+    Returns `"[LS :8000]"` when a server is running on port 8000,
+    `"[LS :8000,:3000]"` for multiple servers, or `""` when idle.
+
+    Lualine example: >lua
+        sections = {
+          lualine_x = {
+            { require("live_server").statusline },
+          },
+        }
+<
+
+===============================================================================
+API                                             *live-server-api*
+
+All functions are on the `live_server` module: >lua
+    local ls = require("live_server")
+<
+
+live_server.setup({opts})                       *live_server.setup()*
+    Merge {opts} with defaults and apply configuration.
+    If `auto_start` is set, registers a `FileType` autocmd.
+
+live_server.start_picker()                      *live_server.start_picker()*
+    UI flow: pick a path (Telescope or vim.ui), pick a port, start.
+
+live_server.open_existing()                     *live_server.open_existing()*
+    Pick a port and open its URL in the default browser.
+
+live_server.force_reload()                      *live_server.force_reload()*
+    Pick a port and broadcast a reload event to all SSE clients.
+
+live_server.toggle_livereload()                 *live_server.toggle_livereload()*
+    Pick a port and toggle file watching on/off for that server.
+
+live_server.status()                            *live_server.status()*
+    Print running servers with port, root, uptime, live state, and
+    connected client count via `vim.notify`.
+
+live_server.statusline()                        *live_server.statusline()*
+    Returns a short string for statusline use. See |live-server-statusline|.
+
+live_server.stop_one()                          *live_server.stop_one()*
+    Pick a running port and stop that server.
+
+live_server.stop_all()                          *live_server.stop_all()*
+    Stop all running servers and clear state.
+
+===============================================================================
+KEYMAPS                                         *live-server-keymaps*
+
+Suggested keymaps (under `<leader>l` with which-key group): >lua
+
+    keys = {
+      { "<leader>ls", "<cmd>LiveServerStart<cr>",      desc = "Start" },
+      { "<leader>lo", "<cmd>LiveServerOpen<cr>",       desc = "Open in browser" },
+      { "<leader>lr", "<cmd>LiveServerReload<cr>",     desc = "Force reload" },
+      { "<leader>lt", "<cmd>LiveServerToggleLive<cr>", desc = "Toggle live-reload" },
+      { "<leader>li", "<cmd>LiveServerStatus<cr>",     desc = "Status" },
+      { "<leader>lS", "<cmd>LiveServerStop<cr>",       desc = "Stop one" },
+      { "<leader>lA", "<cmd>LiveServerStopAll<cr>",    desc = "Stop all" },
+    }
+<
+
+===============================================================================
+TROUBLESHOOTING                                 *live-server-troubleshooting*
+
+Port in use ~
+    Another process is on that port. Pick a different port or run
+    `:LiveServerStop` / `:LiveServerStopAll`.
+
+Browser didn't open ~
+    The plugin tries `vim.ui.open` (Neovim 0.10+), then falls back to
+    `open` (macOS), `xdg-open` (Linux), or `start` (Windows). If none
+    work, copy the URL from the notification.
+
+Live-reload didn't trigger ~
+    - Only HTML pages get the injected script.
+    - Check `.liveignore` isn't excluding the changed file.
+    - Try `:LiveServerToggleLive` off/on, or `:LiveServerReload`.
+
+fs_event error ~
+    Some `luv` builds use different `fs_event:start()` signatures.
+    The plugin tries both. Update to latest Neovim if issues persist.
+
+-------------------------------------------------------------------------------
+vim:tw=78:ft=help:norl:

@@ -6,12 +6,15 @@ Start a server on any file or folder, auto-reload the browser on save, and quick
 * **Pure Lua**: no npm, no Python, no binaries.
 * **Local-only**: binds to `127.0.0.1` (loopback).
 * **SSE live-reload**: instant page refresh on file changes (debounced).
+* **CSS hot-inject**: stylesheet changes apply instantly without a full page reload.
 * **Directory listing**: clean index when no `index.html` exists.
 * **Telescope UX**: pick a path (file or directory) and a port from a friendly picker.
 * **Which-key friendly**: group label in `init`, real mappings in `keys`, no conflicts.
 * **Same-port retargeting**: starting on the same port updates the served root/index (reuses the same browser tab/URL).
+* **Auto-start**: optionally start a server when you open an HTML file.
+* **Statusline**: show active servers in your statusline/lualine.
 
-> 🔒 This plugin serves **only** on `127.0.0.1`. It’s meant for local dev previews, not production.
+> This plugin serves **only** on `127.0.0.1`. It's meant for local dev previews, not production.
 
 ---
 
@@ -40,8 +43,8 @@ return {
     if ok then wk.add({ { "<leader>l", group = "LiveServer" } }) end
   end,
   opts = {
-    default_port = 4070,
-    live_reload = { enabled = true, inject_script = true, debounce = 120 },
+    default_port = 8000,
+    live_reload = { enabled = true, inject_script = true, debounce = 120, css_inject = true },
     directory_listing = { enabled = true, show_hidden = false },
   },
   -- map to user commands (robust lazy-loading)
@@ -50,6 +53,7 @@ return {
     { "<leader>lo", "<cmd>LiveServerOpen<cr>",       desc = "Open existing port in browser" },
     { "<leader>lr", "<cmd>LiveServerReload<cr>",     desc = "Force reload (pick port)" },
     { "<leader>lt", "<cmd>LiveServerToggleLive<cr>", desc = "Toggle live-reload (pick port)" },
+    { "<leader>li", "<cmd>LiveServerStatus<cr>",     desc = "Show server status" },
     { "<leader>lS", "<cmd>LiveServerStop<cr>",       desc = "Stop one (pick port)" },
     { "<leader>lA", "<cmd>LiveServerStopAll<cr>",    desc = "Stop all" },
   },
@@ -66,19 +70,23 @@ return {
 ### Start a server
 
 * Press **`<leader>ls`** (or run `:LiveServerStart`).
-* Pick a **path** (file or directory), then pick a **port** (default `4070`).
+* Pick a **path** (file or directory), then pick a **port** (default `8000`).
 * Your browser opens `http://127.0.0.1:<port>/`.
 
-> If you pick a **file**, the server serves the file’s folder with that file as the default index.
+> If you pick a **file**, the server serves the file's folder with that file as the default index.
 > If you pick the **same port** again later, the server **retargets** to the new root/index instead of creating a new instance.
 
 ### Other commands
 
-* **Open existing**: `:LiveServerOpen` — choose a port and open its URL (works even if another app started the server).
-* **Force reload**: `:LiveServerReload` — broadcast a manual reload to connected clients.
-* **Toggle live-reload**: `:LiveServerToggleLive` — enable/disable file watching + reload for a port.
-* **Stop one**: `:LiveServerStop` — choose a port to stop.
-* **Stop all**: `:LiveServerStopAll`.
+| Command | Description |
+| --- | --- |
+| `:LiveServerStart` | Pick a path and port, start serving |
+| `:LiveServerOpen` | Pick a port, open its URL in browser |
+| `:LiveServerReload` | Force reload all connected clients |
+| `:LiveServerToggleLive` | Enable/disable file watching for a port |
+| `:LiveServerStatus` | Show running servers (port, root, uptime, clients) |
+| `:LiveServerStop` | Pick a port to stop |
+| `:LiveServerStopAll` | Stop all servers |
 
 ---
 
@@ -88,26 +96,90 @@ Configured via `require("live_server").setup({...})` or `opts = { ... }` in your
 
 ```lua
 {
-  default_port  = 4070,         -- default suggestion in the port picker
-  open_on_start = true,         -- open browser after start/retarget
-  notify        = true,         -- use :echo/notify for events
-  headers       = { ["Cache-Control"] = "no-cache" }, -- extra response headers
+  default_port     = 8000,           -- default suggestion in the port picker
+  open_on_start    = true,           -- open browser after start/retarget
+  notify           = true,           -- use vim.notify for events
+  notify_on_reload = false,          -- notify on every live-reload event
+  headers          = { ["Cache-Control"] = "no-cache" }, -- extra response headers
+  cors             = false,          -- true/"*" or origin string (e.g. "http://localhost:3000")
+  index_names      = { "index.html", "index.htm" }, -- index files to try in order
+
+  auto_start = nil,                  -- set to auto-start on filetype, e.g.:
+  -- auto_start = { filetypes = { "html" }, port = 8000 },
 
   live_reload = {
-    enabled       = true,       -- watch files under the served root
-    inject_script = true,       -- injects <script src="/__live/script.js">
-    debounce      = 120,        -- ms debounce for rapid changes
+    enabled       = true,            -- watch files under the served root
+    inject_script = true,            -- injects <script src="/__live/script.js">
+    debounce      = 120,             -- ms debounce for rapid changes
+    css_inject    = true,            -- hot-swap CSS without full page reload
   },
 
   directory_listing = {
-    enabled     = true,         -- render an index page if no index.html
-    show_hidden = false,        -- include dotfiles in listing
+    enabled     = true,              -- render an index page if no index.html
+    show_hidden = false,             -- include dotfiles in listing
   },
 }
 ```
 
-**How live-reload works:**
-A tiny SSE script is injected into **HTML** responses. On any file change under the served root, the server pushes a `reload` event which triggers `location.reload()` in the browser. For non-HTML assets (CSS/JS/image), a full page reload still applies — simple and robust.
+---
+
+## Features
+
+### CSS hot-inject
+
+When `css_inject` is enabled (default), editing a `.css` file triggers an instant stylesheet swap in the browser — no full page reload, no DOM state lost. All other file changes still trigger a full reload.
+
+### Auto-start
+
+Set `auto_start` to automatically start a server when you open a matching filetype:
+
+```lua
+auto_start = { filetypes = { "html" }, port = 8000 }
+```
+
+The server starts once per directory — opening another HTML file in the same folder won't spawn a duplicate.
+
+### `.liveignore`
+
+Create a `.liveignore` file in your served root to skip file-watcher noise. One pattern per line, `*` as wildcard, `#` for comments:
+
+```
+# Don't reload on these
+node_modules
+*.log
+.git
+dist
+```
+
+### CORS
+
+Enable cross-origin headers for all responses:
+
+```lua
+cors = true,                         -- Access-Control-Allow-Origin: *
+cors = "http://localhost:3000",      -- specific origin
+```
+
+Useful when your frontend (on the live server) makes API calls to a separate backend.
+
+### Statusline
+
+Show active servers in lualine or any statusline:
+
+```lua
+-- lualine example
+sections = {
+  lualine_x = {
+    { require("live_server").statusline },
+  },
+}
+```
+
+Returns `"[LS :8000]"` when a server is running, or `""` when idle.
+
+### Styled error pages
+
+404 and 400 errors display a clean, dark-mode-aware HTML page instead of raw text — easier to spot during development.
 
 ---
 
@@ -121,10 +193,11 @@ All under the which-key group **`<leader>l`**:
 | `<leader>lo` | Open existing port in browser  |
 | `<leader>lr` | Force reload (pick port)       |
 | `<leader>lt` | Toggle live-reload (pick port) |
+| `<leader>li` | Show server status             |
 | `<leader>lS` | Stop one (pick port)           |
 | `<leader>lA` | Stop all                       |
 
-> We register only the **group label** in `init`, and return actual mappings in `keys` — the recommended pattern for Folke’s ecosystem to avoid conflicts and enable lazy-loading on keypress.
+> We register only the **group label** in `init`, and return actual mappings in `keys` — the recommended pattern for Folke's ecosystem to avoid conflicts and enable lazy-loading on keypress.
 
 ---
 
@@ -132,27 +205,29 @@ All under the which-key group **`<leader>l`**:
 
 * **Local by default**: binds to `127.0.0.1`. If you want LAN, you can change the bind address in `server.lua` (not recommended for security).
 * **Path safety**: requests are realpath-checked to prevent escaping the served root.
-* **Index resolution**: directory → `default_index` (if starting from a file) → `index.html` → directory listing.
+* **Index resolution**: root directory → `default_index` (if starting from a file) → `index_names` in order → directory listing. Subdirectories always use their own index files.
 * **Same port, new path**: reusing the same port retargets the server → same URL, so browsers typically reuse the same tab.
+* **Graceful exit**: all servers are automatically stopped on `VimLeavePre`.
 
 ---
 
 ## Troubleshooting
 
-* **“Port in use or failed to bind”**
-  Another process is using that port (or a previous server didn’t exit cleanly). Pick a different port, or stop the other process.
+* **"Port in use or failed to bind"**
+  Another process is using that port (or a previous server didn't exit cleanly). Pick a different port, or stop the other process.
   You can stop live-server instances via `:LiveServerStop` or `:LiveServerStopAll`.
 
-* **“start() bad argument #2 to 'start' (table expected, got number)”**
-  Some `luv` builds expect `fs_event:start(path, {recursive=true}, cb)` while others accept `start(path, cb)`. The plugin tries both. Make sure you’re on the **latest** plugin files.
+* **"start() bad argument #2 to 'start' (table expected, got number)"**
+  Some `luv` builds expect `fs_event:start(path, {recursive=true}, cb)` while others accept `start(path, cb)`. The plugin tries both. Make sure you're on the **latest** plugin files.
 
-* **Browser didn’t open**
+* **Browser didn't open**
   We try `vim.ui.open` (NVIM 0.10) and fall back to `xdg-open`/`open`/`start`. If none work, copy the URL from the message and open manually.
 
-* **Live-reload didn’t trigger**
+* **Live-reload didn't trigger**
 
   * It only injects into **HTML** pages.
   * Ensure the served root actually changed (the watcher is per root).
+  * Check `.liveignore` isn't excluding the file.
   * Try `:LiveServerToggleLive` off/on, or `:LiveServerReload` to force.
 
 ---
@@ -167,6 +242,8 @@ ls.start_picker()                -- UI flow: pick path, then port
 ls.open_existing()               -- pick a port → open in browser
 ls.force_reload()                -- broadcast reload to clients
 ls.toggle_livereload()           -- enable/disable live-reload for a port
+ls.status()                      -- print running server info
+ls.statusline()                  -- returns "[LS :8000]" or ""
 ls.stop_one()                    -- pick a port → stop
 ls.stop_all()                    -- stop everything
 ```
@@ -175,17 +252,16 @@ ls.stop_all()                    -- stop everything
 
 ## Roadmap
 
-* File-type aware hot-refresh strategies (e.g., CSS inject without full reload).
 * Optional LAN binding with allowlist.
 * Pluggable middlewares (custom headers, rewrites).
-* (Maybe) directory listing customization (sorting, columns).
+* Directory listing customization (sorting, columns).
 
 ---
 
 ## Contributing
 
 PRs and issues are welcome!
-Please include your **OS**, **Neovim version**, and (if relevant) **`vim.loop`/luv** version when reporting bugs. Repro steps make fixes fast. 🙏
+Please include your **OS**, **Neovim version**, and (if relevant) **`vim.loop`/luv** version when reporting bugs. Repro steps make fixes fast.
 
 ---
 

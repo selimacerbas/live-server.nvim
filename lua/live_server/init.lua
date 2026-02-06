@@ -4,19 +4,24 @@ local util   = require("live_server.util")
 local server = require("live_server.server")
 
 local defaults = {
-  default_port  = 4070,
-  open_on_start = true,
-  notify        = true,
-  headers       = { ["Cache-Control"] = "no-cache" },
+  default_port     = 8000,
+  open_on_start    = true,
+  notify           = true,
+  notify_on_reload = false,   -- show notification on every live-reload
+  headers          = { ["Cache-Control"] = "no-cache" },
+  cors             = false,   -- true/"*" or origin string
+  index_names      = { "index.html", "index.htm" },
+  auto_start       = nil,     -- { filetypes = {"html"}, port = 8000 }
 
   live_reload = {
-    enabled       = true,  -- watch files & push SSE “reload”
-    inject_script = true,  -- inject <script src="/__live/script.js">
-    debounce      = 120,   -- ms
+    enabled       = true,     -- watch files & push SSE "reload"
+    inject_script = true,     -- inject <script src="/__live/script.js">
+    debounce      = 120,      -- ms
+    css_inject    = true,     -- hot-swap CSS without full page reload
   },
 
   directory_listing = {
-    enabled     = true,    -- keep simple listing if no index.html
+    enabled     = true,       -- keep simple listing if no index.html
     show_hidden = false,
   },
 }
@@ -24,12 +29,36 @@ local defaults = {
 M.opts = vim.deepcopy(defaults)
 M.state = { servers = {}, opened_ports = {} } -- [port] = inst; opened_ports[port]=true
 
+local start_for_path -- forward declaration (used by auto_start and start_picker)
+
 function M.setup(opts)
   M.opts = vim.tbl_deep_extend("force", M.opts, opts or {})
+
+  if M.opts.auto_start and M.opts.auto_start.filetypes then
+    local fts = M.opts.auto_start.filetypes
+    if #fts > 0 then
+      vim.api.nvim_create_autocmd("FileType", {
+        pattern = fts,
+        group = vim.api.nvim_create_augroup("LiveServerAutoStart", { clear = true }),
+        callback = function(args)
+          local file = vim.api.nvim_buf_get_name(args.buf)
+          if file == "" then return end
+          local dir = util.dirname(file)
+          local real = vim.loop.fs_realpath(dir)
+          if not real then return end
+          for _, s in pairs(M.state.servers) do
+            if s.root_real == real then return end
+          end
+          local port = M.opts.auto_start.port or M.opts.default_port
+          start_for_path(file, port)
+        end,
+      })
+    end
+  end
 end
 
 -- Start server for a path (file or directory) on a port
-local function start_for_path(path, port)
+function start_for_path(path, port)
   local stat = vim.loop.fs_stat(path)
   if not stat then
     return util.notify("Path not found: " .. path, M.opts, "ERROR")
@@ -51,10 +80,14 @@ local function start_for_path(path, port)
       root = root,
       default_index = index,
       headers = M.opts.headers,
+      cors = M.opts.cors,
+      index_names = M.opts.index_names,
+      notify_on_reload = M.opts.notify_on_reload,
       live = {
         enabled       = M.opts.live_reload.enabled,
         inject_script = M.opts.live_reload.inject_script,
         debounce      = M.opts.live_reload.debounce,
+        css_inject    = M.opts.live_reload.css_inject,
       },
       features = {
         dirlist = {
@@ -150,11 +183,42 @@ function M.stop_one()
 end
 
 function M.stop_all()
-  for port, s in pairs(M.state.servers) do
-    server.stop(s)
-    M.state.servers[port] = nil
+  local ports = vim.tbl_keys(M.state.servers)
+  for _, port in ipairs(ports) do
+    local s = M.state.servers[port]
+    if s then server.stop(s) end
   end
+  M.state.servers = {}
   util.notify("Stopped all LiveServer instances.", M.opts)
+end
+
+-- Status
+function M.status()
+  local ports = vim.tbl_keys(M.state.servers)
+  if #ports == 0 then
+    return util.notify("No running servers.", M.opts)
+  end
+  table.sort(ports)
+  local lines = { "LiveServer status:" }
+  for _, port in ipairs(ports) do
+    local s = M.state.servers[port]
+    local live = server.is_live_enabled(s) and "ON" or "OFF"
+    local clients = #s.sse_clients
+    local uptime = os.time() - s.started_at
+    table.insert(lines, ("  :%d → %s  [live:%s  clients:%d  uptime:%ds]"):format(
+      port, s.root, live, clients, uptime))
+  end
+  util.notify(table.concat(lines, "\n"), M.opts)
+end
+
+-- Statusline component: returns "[LS :8000]" or ""
+function M.statusline()
+  local ports = vim.tbl_keys(M.state.servers)
+  if #ports == 0 then return "" end
+  table.sort(ports)
+  local parts = {}
+  for _, p in ipairs(ports) do table.insert(parts, ":" .. p) end
+  return "[LS " .. table.concat(parts, ",") .. "]"
 end
 
 return M

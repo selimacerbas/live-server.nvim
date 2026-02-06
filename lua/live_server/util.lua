@@ -39,6 +39,12 @@ function U.url_encode(s)
     return (tostring(s):gsub("([^%w%-%._~])", function(c) return string.format("%%%02X", string.byte(c)) end))
 end
 
+function U.path_has_prefix(path, prefix)
+    local sep = package.config:sub(1, 1)
+    if prefix:sub(-1) ~= sep then prefix = prefix .. sep end
+    return path == prefix:sub(1, -2) or path:sub(1, #prefix) == prefix
+end
+
 function U.html_escape(s)
     local map = { ['&'] = '&amp;', ['<'] = '&lt;', ['>'] = '&gt;', ['"'] = '&quot;', ["'"] = '&#39;' }
     return (tostring(s):gsub("[&<>\"]", map):gsub("'", map["'"]))
@@ -103,7 +109,7 @@ local function scan_dirs(root, maxdepth, limit)
             while true do
                 local name, t = uv.fs_scandir_next(it)
                 if not name then break end
-                if t == "directory" then
+                if t == "directory" and name:sub(1, 1) ~= "." then
                     local full = U.joinpath(dir, name)
                     table.insert(res, full)
                     if depth < maxdepth then table.insert(q, { full, depth + 1 }) end
@@ -197,17 +203,19 @@ end
 
 -- Port picker
 function U.pick_port(opts, cb)
-    local default = tostring((opts and opts.default) or 4070)
+    local default = tostring((opts and opts.default) or 8000)
     local known = {}
     for _, p in ipairs(opts.known_ports or {}) do table.insert(known, tostring(p)) end
     table.sort(known, function(a, b) return tonumber(a) < tonumber(b) end)
     local list = {}
-    for _, p in ipairs(known) do table.insert(list, p) end
+    local seen = {}
+    for _, p in ipairs(known) do table.insert(list, p); seen[p] = true end
+    if not seen[default] then table.insert(list, default .. " (default)") end
     table.insert(list, "Other…")
 
     local function finish_with_port(p)
         if not p then return cb(nil) end
-        p = tonumber(p)
+        p = tonumber(tostring(p):match("^(%d+)"))
         if not p or p <= 0 or p > 65535 then
             return U.notify("Invalid port.", { notify = true }, "ERROR")
         end
@@ -222,6 +230,34 @@ function U.pick_port(opts, cb)
             finish_with_port(choice)
         end
     end)
+end
+
+-- .liveignore parser
+function U.parse_liveignore(root)
+    local path = U.joinpath(root, ".liveignore")
+    local fd = uv.fs_open(path, "r", 438)
+    if not fd then return {} end
+    local stat = uv.fs_fstat(fd)
+    if not stat then uv.fs_close(fd); return {} end
+    local content = uv.fs_read(fd, stat.size, 0)
+    uv.fs_close(fd)
+    if not content then return {} end
+    local patterns = {}
+    for line in content:gmatch("[^\r\n]+") do
+        line = line:match("^%s*(.-)%s*$")
+        if line ~= "" and line:sub(1, 1) ~= "#" then
+            local pat = line:gsub("([%.%+%-%^%$%(%)%%])", "%%%1"):gsub("%*", ".*")
+            table.insert(patterns, pat)
+        end
+    end
+    return patterns
+end
+
+function U.match_ignore(path, patterns)
+    for _, pat in ipairs(patterns) do
+        if path:find(pat) then return true end
+    end
+    return false
 end
 
 return U
