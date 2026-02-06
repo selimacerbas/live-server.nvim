@@ -84,7 +84,7 @@ local function sanitize_and_map(req_path, root_real)
     if raw:find("^/$") then
         return root_real
     end
-    local joined = util.joinpath(root_real, raw:gsub("^/+", ""))
+    local joined = util.joinpath(root_real, (raw:gsub("^/+", "")))
     local ok, real = pcall(uv.fs_realpath, joined)
     if not ok or not real then return nil end
     if not util.path_has_prefix(real, root_real) then return nil end
