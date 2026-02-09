@@ -475,4 +475,6 @@ end
 
 function S.is_live_enabled(inst) return inst.live_enabled end
 
+function S.connected_client_count(inst) return #inst.sse_clients end
+
 return S
