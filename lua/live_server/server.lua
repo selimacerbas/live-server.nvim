@@ -465,6 +465,10 @@ function S.reload(inst, reason_path)
     end
 end
 
+function S.send_event(inst, event_type, data)
+    sse_broadcast(inst, event_type, data or "{}")
+end
+
 function S.enable_live(inst, enable)
     enable = not not enable
     if inst.live_enabled == enable then return enable end
