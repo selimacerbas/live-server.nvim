@@ -241,6 +241,8 @@ ls.setup({ ... })                -- configure defaults
 ls.start_picker()                -- UI flow: pick path, then port
 ls.open_existing()               -- pick a port → open in browser
 ls.force_reload()                -- broadcast reload to clients
+-- Server-level API (for plugin authors using live-server.nvim as a dependency):
+-- server.send_event(inst, event_type, data)  -- send a custom SSE event to all connected browsers
 ls.toggle_livereload()           -- enable/disable live-reload for a port
 ls.status()                      -- print running server info
 ls.statusline()                  -- returns "[LS :8000]" or ""
