@@ -254,8 +254,14 @@ ls.stop_all()                    -- stop everything
 
 ```lua
 local server = require("live_server.server")
+local util   = require("live_server.util")
 
-local inst = server.start({ port = 0, root = "/path", ... })  -- port 0 = OS-assigned
+local inst = server.start({
+  port = 0,                                   -- port 0 = OS-assigned
+  root = "/path",
+  token = util.random_token(16),              -- optional, see "Token auth" below
+  protected_paths = { "^/content%.md$" },     -- Lua patterns; require ?t=<token>
+})
 server.send_event(inst, "scroll", '{"line":42}')               -- broadcast custom SSE event
 server.reload(inst, "file.html")                                -- broadcast reload event
 server.update_target(inst, new_root, new_index)                 -- retarget without restart
@@ -268,10 +274,24 @@ server.stop(inst)                                               -- shut down
 External processes can inject SSE events via HTTP:
 
 ```
-GET /__live/inject?event=<type>&data=<url-encoded-json>
+GET /__live/inject?event=<type>&data=<url-encoded-json>[&t=<token>]
 ```
 
-This broadcasts the event to all connected SSE clients. Used by [markdown-preview.nvim](https://github.com/selimacerbas/markdown-preview.nvim) for cross-instance scroll sync.
+This broadcasts the event to all connected SSE clients. Used by [markdown-preview.nvim](https://github.com/selimacerbas/markdown-preview.nvim) for cross-instance scroll sync. The `t=<token>` parameter is required when the server was started with `cfg.token`.
+
+### Token auth (optional)
+
+When `cfg.token` is set, the server requires `?t=<token>` on:
+
+* `/__live/events` (the SSE stream)
+* `/__live/inject` (event injection)
+* Any path matching one of the Lua patterns in `cfg.protected_paths`
+
+Static assets (`index.html`, `style.css`, etc.) are intentionally not gated because the browser bootstraps from them before any JS runs and cannot append query strings to tags it discovers itself. Token-bearing requests for everything else are the caller's responsibility: pass `?t=<token>` to the browser via the initial URL, then stash it in `sessionStorage` and append it on every `fetch`/`EventSource` call.
+
+`util.random_token(byte_len)` generates a hex token (default 16 bytes = 128 bits) from `/dev/urandom`, falling back to `math.random` seeded from `uv.hrtime` + `os.time` + pid. `util.secure_compare(a, b)` is a constant-time-ish string compare for token validation.
+
+Token auth is opt-in. When `cfg.token` is nil (the default), no auth is applied and all endpoints behave as before.
 
 ---
 
