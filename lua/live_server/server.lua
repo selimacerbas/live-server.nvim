@@ -389,7 +389,7 @@ end
 
 -- -------- Public server API -----------------------------------------------
 
--- cfg: { port, root, default_index|nil, headers, live={enabled,inject_script,debounce}, features={dirlist={enabled,show_hidden}}, host }
+-- cfg: { port, root, default_index|nil, headers, live={enabled,inject_script,debounce}, features={dirlist={enabled,show_hidden}}, host, token, protected_paths }
 function S.start(cfg)
     local tcp = uv.new_tcp()
     local host = cfg.host or "127.0.0.1"
@@ -433,6 +433,10 @@ function S.start(cfg)
         index_names      = cfg.index_names or { "index.html", "index.htm" },
         ignore_patterns  = util.parse_liveignore(root_real),
         notify_on_reload = cfg.notify_on_reload or false,
+
+        -- auth
+        token            = cfg.token,            -- nil = no auth; string = required on protected paths
+        protected_paths  = cfg.protected_paths or {},
     }
 
     if inst.live_enabled then start_fs_watch(inst) end
@@ -458,15 +462,57 @@ function S.start(cfg)
                     return send_response(sock, 405, { ["Content-Type"] = "text/plain" }, "Method Not Allowed")
                 end
 
+                -- Split path and query so endpoint matching works whether or
+                -- not the caller appended ?t=<token> for auth.
+                local path_only = req.path:match("^([^?]*)") or req.path
+                local query     = req.path:match("%?(.*)$") or ""
+
+                -- Pull a query-string parameter by key. Anchored to either
+                -- the start of the query or just after an '&' so we don't
+                -- accidentally match a key as a substring of another (e.g.
+                -- 't' inside 'event').
+                local function qparam(key)
+                    return query:match("^" .. key .. "=([^&]*)")
+                        or query:match("&" .. key .. "=([^&]*)")
+                end
+
+                -- Auth gate. When inst.token is set, the SSE stream, the event
+                -- injection endpoint, and any path in inst.protected_paths
+                -- require a matching ?t=<token>. Static assets (/index.html,
+                -- /style.css, /favicon.ico, etc.) are intentionally NOT gated
+                -- because the browser bootstraps from them before any JS runs
+                -- and cannot append query strings to <link>/<img> tags it
+                -- discovers itself. Protect the user content (caller passes
+                -- protected_paths) and the live-reload control plane.
+                if inst.token then
+                    local function path_needs_auth(p)
+                        if p == "/__live/events" or p == "/__live/inject" then
+                            return true
+                        end
+                        for _, pat in ipairs(inst.protected_paths) do
+                            if p:find(pat) then return true end
+                        end
+                        return false
+                    end
+                    if path_needs_auth(path_only) then
+                        local req_token = qparam("t")
+                        local decoded = req_token and util.url_decode(req_token) or ""
+                        if not util.secure_compare(decoded, inst.token) then
+                            return send_response(sock, 401,
+                                { ["Content-Type"] = "text/plain" }, "Unauthorized")
+                        end
+                    end
+                end
+
                 -- Special endpoints
-                if req.path == "/__live/script.js" then
+                if path_only == "/__live/script.js" then
                     return send_response(sock, 200, { ["Content-Type"] = "application/javascript; charset=utf-8" },
                         CLIENT_JS)
-                elseif req.path == "/__live/events" then
+                elseif path_only == "/__live/events" then
                     return sse_accept(inst, sock)
-                elseif req.path:find("^/__live/inject%?") then
-                    local event = req.path:match("[?&]event=([^&]+)")
-                    local data  = req.path:match("[?&]data=([^&]*)")
+                elseif path_only == "/__live/inject" then
+                    local event = qparam("event")
+                    local data  = qparam("data")
                     if event then
                         local decoded = data and util.url_decode(data) or "{}"
                         sse_broadcast(inst, event, decoded)
