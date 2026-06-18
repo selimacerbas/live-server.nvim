@@ -5,6 +5,7 @@ local server = require("live_server.server")
 
 local defaults = {
   default_port     = 8000,
+  host             = "127.0.0.1", -- bind address; use "0.0.0.0" for network access
   open_on_start    = true,
   notify           = true,
   notify_on_reload = false,   -- show notification on every live-reload
@@ -78,6 +79,7 @@ function start_for_path(path, port)
   else
     local ok, inst_or_err = pcall(server.start, {
       port = port,
+      host = M.opts.host,
       root = root,
       default_index = index,
       headers = M.opts.headers,
@@ -106,7 +108,8 @@ function start_for_path(path, port)
   end
 
   if M.opts.open_on_start then
-    util.open_browser(("http://127.0.0.1:%d/"):format(active_port))
+    local display_host = (M.opts.host == "0.0.0.0") and "127.0.0.1" or M.opts.host
+    util.open_browser(("http://%s:%d/"):format(display_host, active_port))
     M.state.opened_ports[active_port] = true
   end
 end
@@ -127,10 +130,13 @@ function M.open_existing()
   util.pick_port({
     default = M.opts.default_port,
     known_ports = vim.tbl_keys(M.state.servers),
-    title = "Open http://127.0.0.1:<port>/ in Browser",
+    title = "Open http://<host>:<port>/ in Browser",
   }, function(port)
     if not port then return end
-    util.open_browser(("http://127.0.0.1:%d/"):format(port))
+    local s = M.state.servers[tonumber(port)]
+    local h = s and s.host or M.opts.host
+    local display_host = (h == "0.0.0.0") and "127.0.0.1" or h
+    util.open_browser(("http://%s:%d/"):format(display_host, port))
     M.state.opened_ports[tonumber(port)] = true
   end)
 end

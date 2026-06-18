@@ -413,6 +413,7 @@ function S.start(cfg)
     local inst = {
         handle           = tcp,
         port             = actual_port,
+        host             = host,
         root             = cfg.root,
         root_real        = root_real,
         default_index    = cfg.default_index,
