@@ -4,7 +4,7 @@ A tiny, zero-dependency **local web server** for Neovim — written in pure Lua 
 Start a server on any file or folder, auto-reload the browser on save, and quickly reopen existing ports.
 
 * **Pure Lua**: no npm, no Python, no binaries.
-* **Local-only**: binds to `127.0.0.1` (loopback).
+* **Local by default**: binds to `127.0.0.1`; set `host = "0.0.0.0"` for network access.
 * **SSE live-reload**: instant page refresh on file changes (debounced).
 * **CSS hot-inject**: stylesheet changes apply instantly without a full page reload.
 * **Directory listing**: clean index when no `index.html` exists.
@@ -14,7 +14,7 @@ Start a server on any file or folder, auto-reload the browser on save, and quick
 * **Auto-start**: optionally start a server when you open an HTML file.
 * **Statusline**: show active servers in your statusline/lualine.
 
-> This plugin serves **only** on `127.0.0.1`. It's meant for local dev previews, not production.
+> This plugin binds to `127.0.0.1` by default. Set `host = "0.0.0.0"` to make it accessible from other machines on the network.
 
 ---
 
@@ -97,6 +97,7 @@ Configured via `require("live_server").setup({...})` or `opts = { ... }` in your
 ```lua
 {
   default_port     = 8000,           -- default suggestion in the port picker
+  host             = "127.0.0.1",    -- bind address; "0.0.0.0" = all interfaces (network access)
   open_on_start    = true,           -- open browser after start/retarget
   notify           = true,           -- use vim.notify for events
   notify_on_reload = false,          -- notify on every live-reload event
@@ -203,7 +204,7 @@ All under the which-key group **`<leader>l`**:
 
 ## Design notes
 
-* **Local by default**: binds to `127.0.0.1`. If you want LAN, you can change the bind address in `server.lua` (not recommended for security).
+* **Local by default**: binds to `127.0.0.1`. Set `host = "0.0.0.0"` in your setup opts to expose over the network (e.g. when SSH-ing in and viewing on another machine).
 * **Path safety**: requests are realpath-checked to prevent escaping the served root.
 * **Index resolution**: root directory → `default_index` (if starting from a file) → `index_names` in order → directory listing. Subdirectories always use their own index files.
 * **Port 0 (OS-assigned)**: pass `port = 0` to let the OS pick a free port. The actual port is available via `inst.port` after `server.start()`.
@@ -297,7 +298,6 @@ Token auth is opt-in. When `cfg.token` is nil (the default), no auth is applied 
 
 ## Roadmap
 
-* Optional LAN binding with allowlist.
 * Pluggable middlewares (custom headers, rewrites).
 * Directory listing customization (sorting, columns).
 
