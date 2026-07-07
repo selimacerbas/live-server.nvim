@@ -394,7 +394,7 @@ end
 
 -- -------- Public server API -----------------------------------------------
 
--- cfg: { port, root, default_index|nil, headers, live={enabled,inject_script,debounce}, features={dirlist={enabled,show_hidden}}, host, token, protected_paths }
+-- cfg: { port, root, default_index|nil, headers, live={enabled,inject_script,debounce}, features={dirlist={enabled,show_hidden}}, host, token, protected_paths, asset_root }
 function S.start(cfg)
     local tcp = uv.new_tcp()
     local host = cfg.host or "127.0.0.1"
@@ -443,6 +443,12 @@ function S.start(cfg)
         -- auth
         token            = cfg.token,            -- nil = no auth; string = required on protected paths
         protected_paths  = cfg.protected_paths or {},
+
+        -- /__live/asset root: a directory, or a function returning one.
+        -- Lets a caller expose files that live next to its source document
+        -- (e.g. images referenced from markdown) without serving that
+        -- directory as the root. Token-gated whenever token is set.
+        asset_root       = cfg.asset_root,
     }
 
     if inst.live_enabled then start_fs_watch(inst) end
@@ -492,7 +498,7 @@ function S.start(cfg)
                 -- protected_paths) and the live-reload control plane.
                 if inst.token then
                     local function path_needs_auth(p)
-                        if p == "/__live/events" or p == "/__live/inject" then
+                        if p == "/__live/events" or p == "/__live/inject" or p == "/__live/asset" then
                             return true
                         end
                         for _, pat in ipairs(inst.protected_paths) do
@@ -524,6 +530,27 @@ function S.start(cfg)
                         sse_broadcast(inst, event, decoded)
                     end
                     return send_response(sock, 200, { ["Content-Type"] = "text/plain" }, "ok")
+                elseif path_only == "/__live/asset" then
+                    local aroot = inst.asset_root
+                    if type(aroot) == "function" then
+                        local ok_root, res = pcall(aroot)
+                        aroot = ok_root and res or nil
+                    end
+                    local rel = qparam("p")
+                    rel = rel and util.url_decode(rel) or ""
+                    -- Relative paths only: reject absolute paths, drive
+                    -- letters / URL schemes (':'), and backslashes outright;
+                    -- realpath containment below handles '..' traversal.
+                    if not aroot or rel == "" or rel:find("^/") or rel:find(":") or rel:find("\\") then
+                        return http_404(sock, "/__live/asset")
+                    end
+                    local aroot_real = uv.fs_realpath(aroot)
+                    if not aroot_real then return http_404(sock, "/__live/asset") end
+                    local ok_real, real = pcall(uv.fs_realpath, util.joinpath(aroot_real, rel))
+                    if not ok_real or not real or not util.path_has_prefix(real, aroot_real) then
+                        return http_404(sock, "/__live/asset")
+                    end
+                    return stream_file(sock, real, inst.headers)
                 end
 
                 -- Map path
