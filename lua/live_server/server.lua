@@ -3,6 +3,14 @@ local util = require("live_server.util")
 
 local S    = {}
 
+-- Capability flags for callers to feature-detect against an independently
+-- versioned install (plugin managers update sibling plugins separately).
+S.features = {
+    token_auth = true,
+    host_binding = true,
+    asset_route = true,
+}
+
 local MIME = {
     html = "text/html; charset=utf-8",
     htm = "text/html; charset=utf-8",
