@@ -121,12 +121,17 @@ local CLIENT_JS = table.concat({
 })
 
 local function sse_accept(inst, sock)
-    write_headers(sock, 200, {
+    local h = {
         ["Content-Type"] = "text/event-stream",
         ["Cache-Control"] = "no-cache",
         ["Connection"] = "keep-alive",
-        ["Access-Control-Allow-Origin"] = "*",
-    })
+    }
+    -- Send CORS on the SSE stream only when the instance was configured for
+    -- it; an unconditional wildcard would let any origin read this stream.
+    if inst.headers["Access-Control-Allow-Origin"] then
+        h["Access-Control-Allow-Origin"] = inst.headers["Access-Control-Allow-Origin"]
+    end
+    write_headers(sock, 200, h)
     sock:write("retry: 1000\n\n")
     table.insert(inst.sse_clients, sock)
     sock:read_start(function(err, chunk)
