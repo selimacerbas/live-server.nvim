@@ -98,6 +98,8 @@ Configured via `require("live_server").setup({...})` or `opts = { ... }` in your
 {
   default_port     = 8000,           -- default suggestion in the port picker
   host             = "127.0.0.1",    -- bind address; "0.0.0.0" = all interfaces (network access)
+  token            = nil,            -- optional: require ?t=<token> on /__live endpoints + protected_paths
+  protected_paths  = {},             -- Lua patterns of request paths that also require the token
   open_on_start    = true,           -- open browser after start/retarget
   notify           = true,           -- use vim.notify for events
   notify_on_reload = false,          -- notify on every live-reload event
@@ -204,7 +206,7 @@ All under the which-key group **`<leader>l`**:
 
 ## Design notes
 
-* **Local by default**: binds to `127.0.0.1`. Set `host = "0.0.0.0"` in your setup opts to expose over the network (e.g. when SSH-ing in and viewing on another machine).
+* **Local by default**: binds to `127.0.0.1`. Set `host = "0.0.0.0"` in your setup opts to expose over the network (e.g. when SSH-ing in and viewing on another machine). **Be deliberate about this**: every file under the served root becomes readable by anyone who can reach the port, traffic is plain unencrypted HTTP, and without `token` the `/__live/inject` control endpoint is open too. Set `token` (and `protected_paths` for sensitive files) when binding beyond loopback, or prefer an SSH tunnel (`ssh -L 8000:localhost:8000 <host>`), which needs no config at all.
 * **Path safety**: requests are realpath-checked to prevent escaping the served root.
 * **Index resolution**: root directory → `default_index` (if starting from a file) → `index_names` in order → directory listing. Subdirectories always use their own index files.
 * **Port 0 (OS-assigned)**: pass `port = 0` to let the OS pick a free port. The actual port is available via `inst.port` after `server.start()`.

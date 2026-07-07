@@ -14,6 +14,13 @@ local defaults = {
   index_names      = { "index.html", "index.htm" },
   auto_start       = nil,     -- { filetypes = {"html"}, port = 8000 }
 
+  -- Optional auth: when token is set, /__live/events and /__live/inject
+  -- require ?t=<token>, as does any request path matching protected_paths
+  -- (Lua patterns). Everything else is still served openly — with a
+  -- non-loopback host the whole served root is reachable from the network.
+  token            = nil,
+  protected_paths  = {},
+
   live_reload = {
     enabled       = true,     -- watch files & push SSE "reload"
     inject_script = true,     -- inject <script src="/__live/script.js">
@@ -84,6 +91,8 @@ function start_for_path(path, port)
       default_index = index,
       headers = M.opts.headers,
       cors = M.opts.cors,
+      token = M.opts.token,
+      protected_paths = M.opts.protected_paths,
       index_names = M.opts.index_names,
       notify_on_reload = M.opts.notify_on_reload,
       live = {
