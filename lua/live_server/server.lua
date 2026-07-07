@@ -78,13 +78,33 @@ end
 
 -- -------- Path mapping & file read ----------------------------------------
 
-local function sanitize_and_map(req_path, root_real)
+-- Canonicalize a request path so the auth gate and the file mapper can never
+-- disagree. Strip the query, percent-decode, then lexically resolve '.'/'..'
+-- and collapse duplicate slashes. Without this a peer could evade a
+-- protected_paths pattern with an encoded or slash-padded variant that still
+-- resolves to the protected file: //content.md, /content%2emd, /x/../content.md.
+local function normalize_path(req_path)
     local raw = req_path:match("^([^?#]*)") or req_path
     raw = util.url_decode(raw)
-    if raw:find("^/$") then
+    local parts = {}
+    for seg in raw:gmatch("[^/]+") do
+        if seg == ".." then
+            parts[#parts] = nil
+        elseif seg ~= "." then
+            parts[#parts + 1] = seg
+        end
+    end
+    return "/" .. table.concat(parts, "/")
+end
+
+-- Map an already-normalized path (see normalize_path) to a real file under
+-- root. realpath containment stays as defense in depth against anything
+-- normalization missed (symlinks, filesystem-level surprises).
+local function sanitize_and_map(norm_path, root_real)
+    if norm_path == "/" then
         return root_real
     end
-    local joined = util.joinpath(root_real, (raw:gsub("^/+", "")))
+    local joined = util.joinpath(root_real, (norm_path:gsub("^/+", "")))
     local ok, real = pcall(uv.fs_realpath, joined)
     if not ok or not real then return nil end
     if not util.path_has_prefix(real, root_real) then return nil end
@@ -128,8 +148,13 @@ local function sse_accept(inst, sock)
     }
     -- Send CORS on the SSE stream only when the instance was configured for
     -- it; an unconditional wildcard would let any origin read this stream.
-    if inst.headers["Access-Control-Allow-Origin"] then
-        h["Access-Control-Allow-Origin"] = inst.headers["Access-Control-Allow-Origin"]
+    -- Match the header key case-insensitively so a user-supplied lowercase
+    -- key still carries through.
+    for k, v in pairs(inst.headers) do
+        if k:lower() == "access-control-allow-origin" then
+            h["Access-Control-Allow-Origin"] = v
+            break
+        end
     end
     write_headers(sock, 200, h)
     sock:write("retry: 1000\n\n")
@@ -474,9 +499,10 @@ function S.start(cfg)
                     return send_response(sock, 405, { ["Content-Type"] = "text/plain" }, "Method Not Allowed")
                 end
 
-                -- Split path and query so endpoint matching works whether or
-                -- not the caller appended ?t=<token> for auth.
-                local path_only = req.path:match("^([^?]*)") or req.path
+                -- Canonicalize the path once; auth matching, endpoint dispatch,
+                -- and file mapping all use this same string so an encoded or
+                -- slash-padded variant can't reach a protected file ungated.
+                local path_only = normalize_path(req.path)
                 local query     = req.path:match("%?(.*)$") or ""
 
                 -- Pull a query-string parameter by key. Anchored to either
@@ -554,7 +580,7 @@ function S.start(cfg)
                 end
 
                 -- Map path
-                local mapped = sanitize_and_map(req.path, inst.root_real)
+                local mapped = sanitize_and_map(path_only, inst.root_real)
                 if not mapped then return http_404(sock, req.path) end
 
                 local st = uv.fs_stat(mapped)

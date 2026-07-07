@@ -111,6 +111,24 @@ eq(r.status, 200, "/__live/inject with correct token is 200")
 r = http_get(("http://127.0.0.1:%d/__live/events"):format(port))
 eq(r.status, 401, "/__live/events without token is 401")
 
+-- Path-normalization bypass: encoded or slash-padded variants of a protected
+-- path must NOT evade the token (they resolve to the same file).
+r = http_get(("http://127.0.0.1:%d//content.md"):format(port))
+eq(r.status, 401, "//content.md (extra slash) without token is 401")
+
+r = http_get(("http://127.0.0.1:%d/content%%2emd"):format(port))
+eq(r.status, 401, "/content%2emd (encoded dot) without token is 401")
+
+r = http_get(("http://127.0.0.1:%d/./content.md"):format(port))
+eq(r.status, 401, "/./content.md (dot segment) without token is 401")
+
+r = http_get(("http://127.0.0.1:%d/sub/../content.md?t=wrong"):format(port))
+eq(r.status, 401, "/sub/../content.md (traversal) with wrong token is 401")
+
+-- And the normalized/encoded form still serves with the correct token.
+r = http_get(("http://127.0.0.1:%d//content.md?t=%s"):format(port, TOKEN))
+eq(r.status, 200, "//content.md with correct token still serves")
+
 server.stop(inst)
 
 -- ─── Section 3: backward compat (no token in cfg) ───────────────────────────
