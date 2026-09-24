@@ -2,7 +2,7 @@
 -- Verify the /__live/asset endpoint:
 --   - serves files relative to cfg.asset_root (string or function form)
 --   - requires ?t=<token> when token auth is configured
---   - rejects traversal, absolute paths, and schemes
+--   - rejects traversal (a symlink out of the root too), absolute paths, and schemes
 --
 -- Run: nvim --headless -u NONE -l tests/asset_route_test.lua
 
@@ -10,6 +10,7 @@ local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub
 H.isolate()
 H.rtp()
 
+local uv = vim.uv or vim.loop
 local server = require("live_server.server")
 local lutil = require("live_server.util")
 local eq, http_get, write_file = H.eq, H.http_get, H.write_file
@@ -52,6 +53,25 @@ eq(http_get(base .. "/__live/asset?p=/etc/hosts&t=" .. TOKEN).status, 404, "abso
 eq(http_get(base .. "/__live/asset?p=c:%5Cwin&t=" .. TOKEN).status, 404, "drive letter / backslash is 404")
 eq(http_get(base .. "/__live/asset?p=missing.png&t=" .. TOKEN).status, 404, "missing file is 404")
 eq(http_get(base .. "/__live/asset?t=" .. TOKEN).status, 404, "missing p param is 404")
+-- Containment is by the resolved path, not the spelling: a link inside the
+-- asset root that points above it was served by a lexical check (measured on
+-- a mutant). A link that cannot be made, or is made and does not resolve
+-- (Windows takes the / in its target unconverted), is skipped, counted.
+local link = tmpdir .. "/src/link.txt"
+local linked, link_err = uv.fs_symlink("../secret.txt", link)
+if linked and uv.fs_stat(link) then
+    eq(
+        http_get(base .. "/__live/asset?p=link.txt&t=" .. TOKEN).status,
+        404,
+        "a symlink in the asset root pointing above it is 404"
+    )
+else
+    H.skip(
+        "a symlink in the asset root pointing above it is 404 ("
+            .. tostring(link_err or "the link does not resolve")
+            .. ")"
+    )
+end
 
 server.stop(inst)
 

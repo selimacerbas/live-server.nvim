@@ -92,6 +92,10 @@ r = http_get(("http://127.0.0.1:%d//content.md?t=%s"):format(port, TOKEN))
 eq(r.status, 200, "//content.md with correct token still serves")
 
 server.stop(inst)
+-- Refused is curl 7: a listener left open after stop answers (curl 0) and
+-- one left bound and silent reads 28, both with status 0.
+r = http_get(("http://127.0.0.1:%d/"):format(port))
+eq(r.curl_exit, 7, "the port refuses connections after stop")
 
 -- ─── Section 3: backward compat (no token in cfg) ───────────────────────────
 H.section("Section 3: no token = no auth (backward compat)")
@@ -111,6 +115,8 @@ r = http_get(("http://127.0.0.1:%d/__live/inject?event=reload"):format(port))
 eq(r.status, 200, "/__live/inject reachable when token not configured")
 
 server.stop(inst)
+r = http_get(("http://127.0.0.1:%d/"):format(port))
+eq(r.curl_exit, 7, "the port refuses connections after stop without a token")
 
 -- ─── Summary ────────────────────────────────────────────────────────────────
 H.finish()

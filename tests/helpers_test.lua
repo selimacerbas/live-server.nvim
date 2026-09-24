@@ -1,12 +1,14 @@
 -- tests/helpers_test.lua
--- Verify the harness every other suite leans on: the root it resolves, the
--- XDG move, the bounded curl and the exit code a gate reads.
+-- Verify the harness every other suite leans on: the root it resolves and
+-- the XDG move (Section 1), the bounded curl (2), the exit code a gate reads
+-- (3), an error a callback raises failing the suite (4), H.expect_error (5),
+-- H.rtp's proof of the copy require loads (6) and one spelling per path (7).
 --
 -- Run: nvim --headless -u NONE -l tests/helpers_test.lua
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 local xdg = H.isolate()
-H.rtp()
+local rtp_dir = H.rtp()
 
 local uv = vim.uv or vim.loop
 local ok, eq = H.ok, H.eq
@@ -105,6 +107,7 @@ srv:close()
 -- that kills itself stands in for it.
 if vim.fn.has("win32") == 1 then
     H.skip("a curl killed by SIGTERM reads curl_exit 143 (no kill -TERM $$ on Windows)")
+    H.skip("a curl killed by a signal yields status 0 (no kill -TERM $$ on Windows)")
 else
     local fake = H.tmpdir()
     H.write_file(fake .. "/curl", "#!/bin/sh\nkill -TERM $$\n")
@@ -522,6 +525,17 @@ H.finish()]],
 )
 
 H.section("Section 6: H.rtp proves the checkout is the copy require loads")
+-- H.rtp returns the directory it proved, canonical, and require's search
+-- resolves live-server's server.lua under it: the checkout here,
+-- markdown-preview's live-server dependency there.
+eq(H.canon(rtp_dir), rtp_dir, "H.rtp returns a canonical path")
+ok(vim.fn.isdirectory(rtp_dir) == 1, "H.rtp returns a directory")
+local resolved = vim.api.nvim_get_runtime_file("lua/live_server/server.lua", false)[1]
+ok(
+    resolved ~= nil and vim.startswith(H.canon(resolved), rtp_dir .. "/"),
+    "live-server's server.lua resolves under the directory H.rtp returns: " .. tostring(resolved)
+)
+
 -- A comma in the checkout's path splits its runtimepath entry and a copy on
 -- the packpath answers instead (measured). markdown-preview runs this file
 -- against its own H.rtp, which proves its own entry file first, so both
@@ -531,7 +545,7 @@ local base = H.tmpdir()
 local rtp_cases = {
     "a checkout whose path the runtimepath splits raises at the suite's line, naming the installed copy",
     "a checkout whose path holds a brace group raises the search's own error at the suite's line",
-    "a checkout reached through a plain-named link to a path with a comma loads",
+    "a checkout reached through a plain-named link to a path with a comma loads and returns its canonical root",
 }
 if base:find("[,$*?%[%]{}]") then
     for _, msg in ipairs(rtp_cases) do
@@ -589,7 +603,8 @@ else
     )
     -- The runtimepath gets the checkout by the name the helper was loaded
     -- through, so a link without a comma loads where the physical name would
-    -- be split; markdown-preview's H.rtp finds live-server through
+    -- be split, and H.rtp still returns the canonical directory server.lua
+    -- resolves under; markdown-preview's H.rtp finds live-server through
     -- LIVE_SERVER_RTP here, a directory with a plain name.
     local plain_ls = base .. "/plain-ls"
     vim.fn.mkdir(plain_ls .. "/lua/live_server", "p")
@@ -599,10 +614,19 @@ else
     local linked, link_err = uv.fs_symlink(root, link, { dir = true })
     if linked and uv.fs_stat(link .. "/tests/helpers.lua") then
         eq(
-            child_exit('H.rtp()\nH.ok(true, "loaded")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped", {
-                helpers = link .. "/tests/helpers.lua",
-                env = { XDG_DATA_HOME = data, LIVE_SERVER_RTP = plain_ls },
-            }),
+            child_exit(
+                [[
+local d = H.rtp()
+local f = vim.api.nvim_get_runtime_file("lua/live_server/server.lua", false)[1]
+H.ok(H.canon(d) == d, "canonical")
+H.ok(f ~= nil and vim.startswith(H.canon(f), d .. "/"), "server.lua under it")
+H.finish()]],
+                "Results: 2 passed, 0 failed, 0 skipped",
+                {
+                    helpers = link .. "/tests/helpers.lua",
+                    env = { XDG_DATA_HOME = data, LIVE_SERVER_RTP = plain_ls },
+                }
+            ),
             0,
             rtp_cases[3]
         )
@@ -638,13 +662,16 @@ eq(H.canon("~/nope-canon-xyz"), H.canon(vim.fn.expand("~")) .. "/nope-canon-xyz"
 -- normalize expands $VAR unless told not to, and a $ in a directory's name
 -- is a character: a message names the directory that exists
 -- (markdown-preview's rtp_test override case). A file system that refuses
--- the name skips both, measured by the mkdir itself, as rtp_test does.
+-- the name skips both, measured by the mkdir itself, as markdown-preview.nvim's
+-- rtp_test does.
 local odd_made, odd_err = uv.fs_mkdir(p .. "/odd$HOME-x", 493)
 if odd_made then
     eq(H.canon(p .. "/odd$HOME-x"), canon_p .. "/odd$HOME-x", "a $ in an existing name stays a character")
     eq(H.canon(p .. "/gone$HOME-y"), canon_p .. "/gone$HOME-y", "a $ in a missing name stays a character")
 else
-    H.skip("a $ in a name stays a character (this file system refuses the name: " .. tostring(odd_err) .. ")")
+    for _, msg in ipairs({ "a $ in an existing name stays a character", "a $ in a missing name stays a character" }) do
+        H.skip(msg .. " (this file system refuses the name: " .. tostring(odd_err) .. ")")
+    end
 end
 local unstable = {}
 for _, name in ipairs({ p, p .. "/phys/../phys", p .. "/nope", p .. "/missing/../phys", p .. "/odd$HOME-x", "." }) do
@@ -659,35 +686,33 @@ eq(table.concat(unstable, ", "), "", "a second pass changes nothing")
 -- resolves .. by name before the filesystem sees it.
 local link = p .. "/links/t"
 local linked, link_err = uv.fs_symlink(p .. "/phys/t", link, { dir = true })
+local link_cases = {
+    "a directory symlink folds to its target",
+    "a missing name folded away by .. still resolves the link it lands on",
+}
+local dotdot_cases = {
+    "a .. after a directory symlink resolves from its target",
+    "a .. after a directory symlink resolves from its target while a later name is missing",
+    "creating the missing name leaves that path where it was",
+}
 if linked and uv.fs_stat(link) then
-    eq(H.canon(link), canon_p .. "/phys/t", "a directory symlink folds to its target")
-    eq(
-        H.canon(p .. "/missing/../links/t"),
-        canon_p .. "/phys/t",
-        "a missing name folded away by .. still resolves the link it lands on"
-    )
+    eq(H.canon(link), canon_p .. "/phys/t", link_cases[1])
+    eq(H.canon(p .. "/missing/../links/t"), canon_p .. "/phys/t", link_cases[2])
     if vim.fn.has("win32") == 1 then
-        H.skip("a .. after a directory symlink resolves from its target (Win32 resolves .. by name)")
+        for _, msg in ipairs(dotdot_cases) do
+            H.skip(msg .. " (Win32 resolves .. by name)")
+        end
     else
-        eq(
-            H.canon(link .. "/../only-phys"),
-            canon_p .. "/phys/only-phys",
-            "a .. after a directory symlink resolves from its target"
-        )
-        eq(
-            H.canon(link .. "/../later/leaf"),
-            canon_p .. "/phys/later/leaf",
-            "a .. after a directory symlink resolves from its target while a later name is missing"
-        )
+        eq(H.canon(link .. "/../only-phys"), canon_p .. "/phys/only-phys", dotdot_cases[1])
+        eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[2])
         vim.fn.mkdir(p .. "/phys/later", "p")
-        eq(
-            H.canon(link .. "/../later/leaf"),
-            canon_p .. "/phys/later/leaf",
-            "creating the missing name leaves that path where it was"
-        )
+        eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[3])
     end
 else
-    H.skip("the symlink folds (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")")
+    local why = " (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")"
+    for _, msg in ipairs(vim.list_extend(vim.list_extend({}, link_cases), dotdot_cases)) do
+        H.skip(msg .. why)
+    end
 end
 ok(
     (p .. "/phys/") ~= (p .. "/phys") and H.same_path(p .. "/phys/", p .. "/phys"),
