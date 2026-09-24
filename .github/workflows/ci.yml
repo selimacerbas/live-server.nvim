@@ -69,8 +69,10 @@ jobs:
 
   # Drift detection reports, it does not gate a merge: an upstream nightly
   # break is not this plugin's regression. The weekly cron is its reason to
-  # exist, so it stays outside ci-ok.
+  # exist, so it stays outside ci-ok. It runs on the cron and by hand only, so a
+  # PR never shows an upstream nightly break.
   nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     name: nightly (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
