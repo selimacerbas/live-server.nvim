@@ -41,6 +41,7 @@ local dinst = server.start({
     features = { dirlist = { enabled = false } },
 })
 eq(dinst.host, "127.0.0.1", "inst.host defaults to '127.0.0.1'")
+eq(dinst.handle:getsockname().ip, "127.0.0.1", "socket bound to loopback")
 local dr = http_get(("http://127.0.0.1:%d/"):format(dinst.port))
 eq(dr.status, 200, "loopback reachable on default bind")
 server.stop(dinst)
@@ -57,6 +58,7 @@ local inst = server.start({
     features = { dirlist = { enabled = false } },
 })
 eq(inst.host, "127.0.0.1", "inst.host is '127.0.0.1' when configured so")
+eq(inst.handle:getsockname().ip, "127.0.0.1", "socket bound to loopback")
 local port = inst.port
 
 local r = http_get(("http://127.0.0.1:%d/"):format(port))
@@ -66,7 +68,7 @@ if lan_ip and lan_ip ~= "127.0.0.1" then
     r = http_get(("http://%s:%d/"):format(lan_ip, port))
     ok(r.status ~= 200, "LAN IP NOT reachable when bound to 127.0.0.1")
 else
-    print("  SKIP: could not determine LAN IP, skipping LAN-unreachable check")
+    H.skip("could not determine LAN IP, skipping LAN-unreachable check")
 end
 
 server.stop(inst)
@@ -98,11 +100,11 @@ if lan_ip and lan_ip ~= "127.0.0.1" then
     if r.status == 200 then
         ok(true, ("LAN IP %s reachable on 0.0.0.0 bind"):format(lan_ip))
     else
-        print(("  NOTE: LAN IP %s not reachable (status %d) — likely a host firewall; bind address asserted above")
+        H.skip(("LAN IP %s not reachable (status %d): likely a host firewall; bind address asserted above")
             :format(lan_ip, r.status))
     end
 else
-    print("  SKIP: could not determine LAN IP, skipping LAN-reachable check")
+    H.skip("could not determine LAN IP, skipping LAN-reachable check")
 end
 
 server.stop(inst)
