@@ -226,7 +226,7 @@ All under the which-key group **`<leader>l`**:
   Some `luv` builds expect `fs_event:start(path, {recursive=true}, cb)` while others accept `start(path, cb)`. The plugin tries both. Make sure you're on the **latest** plugin files.
 
 * **Browser didn't open**
-  We try `vim.ui.open` (NVIM 0.10) and fall back to `xdg-open`/`open`/`start`. If none work, copy the URL from the message and open manually.
+  We try `vim.ui.open` and fall back to `xdg-open`/`open`/`start`. If none work, copy the URL from the message and open manually.
 
 * **Live-reload didn't trigger**
 

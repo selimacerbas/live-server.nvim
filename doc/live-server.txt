@@ -242,9 +242,9 @@ Port in use ~
     `:LiveServerStop` / `:LiveServerStopAll`.
 
 Browser didn't open ~
-    The plugin tries `vim.ui.open` (Neovim 0.10+), then falls back to
-    `open` (macOS), `xdg-open` (Linux), or `start` (Windows). If none
-    work, copy the URL from the notification.
+    The plugin tries `vim.ui.open`, then falls back to `open` (macOS),
+    `xdg-open` (Linux), or `start` (Windows). If none work, copy the URL
+    from the notification.
 
 Live-reload didn't trigger ~
     - Only HTML pages get the injected script.

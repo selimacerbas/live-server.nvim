@@ -1,3 +1,16 @@
+-- A config calls setup() whatever the plugin file did (lazy.nvim's config
+-- runs it), so below the floor the module is a stub that answers every call
+-- with nothing and never loads the code that needs vim.uv. The text is the
+-- plugin file's, so notify_once shows it once.
+if vim.fn.has("nvim-0.10") == 0 then
+    vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+    return setmetatable({}, {
+        __index = function()
+            return function() end
+        end,
+    })
+end
+
 local M = {}
 
 local util = require("live_server.util")

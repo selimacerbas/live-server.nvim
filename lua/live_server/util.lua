@@ -115,11 +115,9 @@ end
 
 -- Open URL in default browser (portable)
 function U.open_browser(url)
-    if vim.ui and vim.ui.open then
-        local ok = pcall(vim.ui.open, url)
-        if ok then
-            return
-        end
+    local ok = pcall(vim.ui.open, url)
+    if ok then
+        return
     end
     local sys = (jit and jit.os) or uv.os_uname().sysname
     if sys == "Windows" or sys == "Windows_NT" then
