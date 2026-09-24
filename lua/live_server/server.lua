@@ -1,7 +1,7 @@
-local uv   = vim.loop
+local uv = vim.loop
 local util = require("live_server.util")
 
-local S    = {}
+local S = {}
 
 -- Capability flags for callers to feature-detect against an independently
 -- versioned install (plugin managers update sibling plugins separately).
@@ -37,8 +37,13 @@ end
 
 local function write_headers(sock, status, headers)
     local reason = ({
-        [200] = "OK", [301] = "Moved Permanently", [302] = "Found", [400] = "Bad Request",
-        [404] = "Not Found", [405] = "Method Not Allowed", [500] = "Internal Server Error"
+        [200] = "OK",
+        [301] = "Moved Permanently",
+        [302] = "Found",
+        [400] = "Bad Request",
+        [404] = "Not Found",
+        [405] = "Method Not Allowed",
+        [500] = "Internal Server Error",
     })[status] or "OK"
     local lines = { ("HTTP/1.1 %d %s\r\n"):format(status, reason) }
     for k, v in pairs(headers or {}) do
@@ -50,22 +55,33 @@ end
 
 local function send_response(sock, status, headers, body)
     local h = headers or {}
-    if body then h["Content-Length"] = #body end
+    if body then
+        h["Content-Length"] = #body
+    end
     h["Connection"] = "close"
     write_headers(sock, status, h)
-    if body then sock:write(body) end
-    sock:shutdown(function() sock:close() end)
+    if body then
+        sock:write(body)
+    end
+    sock:shutdown(function()
+        sock:close()
+    end)
 end
 
 local function error_page(status, title, detail)
     return string.format(
         '<!doctype html><html><head><meta charset="utf-8"><title>%d %s</title>'
-        .. '<style>:root{color-scheme:light dark}'
-        .. 'body{font:16px/1.6 system-ui,sans-serif;padding:40px;max-width:600px;margin:80px auto;text-align:center}'
-        .. 'h1{font-size:48px;margin:0;opacity:.3}p{opacity:.7}'
-        .. 'code{background:rgba(127,127,127,.15);padding:2px 8px;border-radius:4px;font-size:14px}'
-        .. '</style></head><body><h1>%d</h1><p>%s</p><p><code>%s</code></p></body></html>',
-        status, util.html_escape(title), status, util.html_escape(title), util.html_escape(detail))
+            .. "<style>:root{color-scheme:light dark}"
+            .. "body{font:16px/1.6 system-ui,sans-serif;padding:40px;max-width:600px;margin:80px auto;text-align:center}"
+            .. "h1{font-size:48px;margin:0;opacity:.3}p{opacity:.7}"
+            .. "code{background:rgba(127,127,127,.15);padding:2px 8px;border-radius:4px;font-size:14px}"
+            .. "</style></head><body><h1>%d</h1><p>%s</p><p><code>%s</code></p></body></html>",
+        status,
+        util.html_escape(title),
+        status,
+        util.html_escape(title),
+        util.html_escape(detail)
+    )
 end
 
 local function http_404(sock, path)
@@ -73,14 +89,23 @@ local function http_404(sock, path)
 end
 
 local function http_400(sock, msg)
-    send_response(sock, 400, { ["Content-Type"] = "text/html; charset=utf-8" }, error_page(400, "Bad Request", msg or ""))
+    send_response(
+        sock,
+        400,
+        { ["Content-Type"] = "text/html; charset=utf-8" },
+        error_page(400, "Bad Request", msg or "")
+    )
 end
 
 local function parse_request(buf)
     local line = buf:match("([^\r\n]+)")
-    if not line then return nil end
+    if not line then
+        return nil
+    end
     local m, path = line:match("^(%u+)%s+([^%s]+)")
-    if not m or not path then return nil end
+    if not m or not path then
+        return nil
+    end
     return { method = m, path = path }
 end
 
@@ -114,14 +139,20 @@ local function sanitize_and_map(norm_path, root_real)
     end
     local joined = util.joinpath(root_real, (norm_path:gsub("^/+", "")))
     local ok, real = pcall(uv.fs_realpath, joined)
-    if not ok or not real then return nil end
-    if not util.path_has_prefix(real, root_real) then return nil end
+    if not ok or not real then
+        return nil
+    end
+    if not util.path_has_prefix(real, root_real) then
+        return nil
+    end
     return real
 end
 
 local function read_file_all(abs_path)
     local fd = uv.fs_open(abs_path, "r", 438)
-    if not fd then return nil end
+    if not fd then
+        return nil
+    end
     local stat = uv.fs_fstat(fd)
     if not stat or stat.type ~= "file" then
         uv.fs_close(fd)
@@ -175,7 +206,9 @@ local function sse_accept(inst, sock)
                     break
                 end
             end
-            pcall(function() sock:close() end)
+            pcall(function()
+                sock:close()
+            end)
         end
     end)
 end
@@ -185,9 +218,13 @@ local function sse_broadcast(inst, event, payload)
     local i = 1
     while i <= #inst.sse_clients do
         local cl = inst.sse_clients[i]
-        local ok = pcall(function() cl:write(line) end)
+        local ok = pcall(function()
+            cl:write(line)
+        end)
         if not ok then
-            pcall(function() cl:close() end)
+            pcall(function()
+                cl:close()
+            end)
             table.remove(inst.sse_clients, i)
         else
             i = i + 1
@@ -196,9 +233,13 @@ local function sse_broadcast(inst, event, payload)
 end
 
 local function schedule_reload(inst, changed_path)
-    if not inst.live_enabled then return end
+    if not inst.live_enabled then
+        return
+    end
     if changed_path and changed_path ~= "" and #inst.ignore_patterns > 0 then
-        if util.match_ignore(changed_path, inst.ignore_patterns) then return end
+        if util.match_ignore(changed_path, inst.ignore_patterns) then
+            return
+        end
     end
     inst._last_change = changed_path or inst._last_change
     inst.debounce_timer:stop()
@@ -212,10 +253,14 @@ local function scan_dirs(root)
     local dirs = { root }
     local function walk(dir)
         local handle = uv.fs_scandir(dir)
-        if not handle then return end
+        if not handle then
+            return
+        end
         while true do
             local name, typ = uv.fs_scandir_next(handle)
-            if not name then break end
+            if not name then
+                break
+            end
             if typ == "directory" and name ~= ".git" and name ~= "node_modules" then
                 local full = util.joinpath(dir, name)
                 dirs[#dirs + 1] = full
@@ -240,7 +285,9 @@ end
 local function add_dir_watch(inst, dir)
     local ev = uv.new_fs_event()
     local cb = function(err, fname, _status)
-        if err then return end
+        if err then
+            return
+        end
         local full = fname and fname ~= "" and util.joinpath(dir, fname) or dir
         schedule_reload(inst, full)
         -- Watch newly created subdirectories
@@ -251,21 +298,31 @@ local function add_dir_watch(inst, dir)
             end
         end
     end
-    local ok = pcall(function() ev:start(dir, {}, cb) end)
+    local ok = pcall(function()
+        ev:start(dir, {}, cb)
+    end)
     if not ok then
-        pcall(function() ev:start(dir, cb) end)
+        pcall(function()
+            ev:start(dir, cb)
+        end)
     end
     inst._fs_events[dir] = ev
 end
 
 local function stop_fs_watch(inst)
     if inst.fs_event then
-        pcall(function() inst.fs_event:stop(); inst.fs_event:close() end)
+        pcall(function()
+            inst.fs_event:stop()
+            inst.fs_event:close()
+        end)
         inst.fs_event = nil
     end
     if inst._fs_events then
         for _, ev in pairs(inst._fs_events) do
-            pcall(function() ev:stop(); ev:close() end)
+            pcall(function()
+                ev:stop()
+                ev:close()
+            end)
         end
         inst._fs_events = nil
     end
@@ -278,15 +335,21 @@ local function start_fs_watch(inst)
         -- macOS / Windows: single recursive watcher
         local single = uv.new_fs_event()
         local cb = function(err, fname, _status)
-            if err then return end
+            if err then
+                return
+            end
             schedule_reload(inst, fname or "")
         end
-        local ok = pcall(function() single:start(inst.root_real, { recursive = true }, cb) end)
+        local ok = pcall(function()
+            single:start(inst.root_real, { recursive = true }, cb)
+        end)
         if ok then
             inst.fs_event = single
             return
         end
-        pcall(function() single:close() end)
+        pcall(function()
+            single:close()
+        end)
     end
 
     -- Linux (or recursive failed): per-directory watchers
@@ -308,13 +371,17 @@ local function send_html_with_injection(inst, sock, html, extra_headers)
         end
     end
     local headers = { ["Content-Type"] = "text/html; charset=utf-8" }
-    for k, v in pairs(extra_headers or {}) do headers[k] = v end
+    for k, v in pairs(extra_headers or {}) do
+        headers[k] = v
+    end
     send_response(sock, 200, headers, html)
 end
 
 local function serve_html_file_with_injection(inst, sock, abs_path, extra_headers)
     local body = read_file_all(abs_path)
-    if not body then return http_404(sock, abs_path) end
+    if not body then
+        return http_404(sock, abs_path)
+    end
     send_html_with_injection(inst, sock, body, extra_headers)
 end
 
@@ -331,7 +398,9 @@ local function dir_listing_html(inst, fs_path, req_path)
     end
     while true do
         local name, t = uv.fs_scandir_next(iter)
-        if not name then break end
+        if not name then
+            break
+        end
         if not inst.dir_show_hidden and name:sub(1, 1) == "." then
             -- skip hidden
         else
@@ -339,7 +408,9 @@ local function dir_listing_html(inst, fs_path, req_path)
         end
     end
     table.sort(entries, function(a, b)
-        if a.is_dir ~= b.is_dir then return a.is_dir end
+        if a.is_dir ~= b.is_dir then
+            return a.is_dir
+        end
         return a.name:lower() < b.name:lower()
     end)
 
@@ -351,14 +422,16 @@ local function dir_listing_html(inst, fs_path, req_path)
             local parent = req_path:gsub("/+$", ""):match("^(.*)/[^/]*$") or "/"
             href = parent == "" and "/" or parent .. "/"
         else
-            href = req_path ..
-            (req_path:sub(-1) == "/" and "" or "/") .. util.url_encode(e.name) .. (e.is_dir and "/" or "")
+            href = req_path
+                .. (req_path:sub(-1) == "/" and "" or "/")
+                .. util.url_encode(e.name)
+                .. (e.is_dir and "/" or "")
         end
         local icon = e.up and "⤴" or (e.is_dir and "📁" or "📄")
-        table.insert(rows, string.format(
-            '<tr><td class="ico">%s</td><td><a href="%s">%s</a></td></tr>',
-            icon, href, label
-        ))
+        table.insert(
+            rows,
+            string.format('<tr><td class="ico">%s</td><td><a href="%s">%s</a></td></tr>', icon, href, label)
+        )
     end
 
     local title = "Index of " .. util.html_escape(req_path)
@@ -373,25 +446,36 @@ local function dir_listing_html(inst, fs_path, req_path)
       a{text-decoration:none} a:hover{text-decoration:underline}
     </style>
   ]]
-    return string.format([[
+    return string.format(
+        [[
   <!doctype html><html><head><meta charset="utf-8"><title>%s</title>%s</head>
   <body><h1>%s</h1><table>%s</table></body></html>
-  ]], util.html_escape(title), css, util.html_escape(title), table.concat(rows))
+  ]],
+        util.html_escape(title),
+        css,
+        util.html_escape(title),
+        table.concat(rows)
+    )
 end
 
 -- -------- Static file streaming -------------------------------------------
 
 local function stream_file(sock, abs_path, extra_headers)
     local fd = uv.fs_open(abs_path, "r", 438)
-    if not fd then return http_404(sock, abs_path) end
+    if not fd then
+        return http_404(sock, abs_path)
+    end
     local stat = uv.fs_fstat(fd)
     if not stat or stat.type ~= "file" then
         uv.fs_close(fd)
         return http_404(sock, abs_path)
     end
 
-    local headers = { ["Content-Type"] = guess_mime(abs_path), ["Content-Length"] = stat.size, ["Connection"] = "close" }
-    for k, v in pairs(extra_headers or {}) do headers[k] = v end
+    local headers =
+        { ["Content-Type"] = guess_mime(abs_path), ["Content-Length"] = stat.size, ["Connection"] = "close" }
+    for k, v in pairs(extra_headers or {}) do
+        headers[k] = v
+    end
     write_headers(sock, 200, headers)
 
     local offset = 0
@@ -399,14 +483,18 @@ local function stream_file(sock, abs_path, extra_headers)
         uv.fs_read(fd, 64 * 1024, offset, function(err_read, data)
             if err_read or not data then
                 uv.fs_close(fd)
-                sock:shutdown(function() sock:close() end)
+                sock:shutdown(function()
+                    sock:close()
+                end)
                 return
             end
             offset = offset + #data
             sock:write(data, function()
                 if #data < 64 * 1024 then
                     uv.fs_close(fd)
-                    sock:shutdown(function() sock:close() end)
+                    sock:shutdown(function()
+                        sock:close()
+                    end)
                 else
                     read_chunk()
                 end
@@ -431,8 +519,12 @@ end
 function S.start(cfg)
     local tcp = uv.new_tcp()
     local host = cfg.host or "127.0.0.1"
-    local ok, bind_err = pcall(function() tcp:bind(host, cfg.port) end)
-    if not ok then error(bind_err or "bind failed") end
+    local ok, bind_err = pcall(function()
+        tcp:bind(host, cfg.port)
+    end)
+    if not ok then
+        error(bind_err or "bind failed")
+    end
 
     -- Resolve actual port (needed when cfg.port == 0 for OS-assigned port)
     local actual_port = cfg.port
@@ -441,7 +533,9 @@ function S.start(cfg)
     end
 
     local root_real = uv.fs_realpath(cfg.root)
-    if not root_real then error("Invalid root: " .. tostring(cfg.root)) end
+    if not root_real then
+        error("Invalid root: " .. tostring(cfg.root))
+    end
 
     local headers = vim.tbl_extend("keep", cfg.headers or {}, {})
     if cfg.cors then
@@ -449,46 +543,50 @@ function S.start(cfg)
     end
 
     local inst = {
-        handle           = tcp,
-        port             = actual_port,
-        host             = host,
-        root             = cfg.root,
-        root_real        = root_real,
-        default_index    = cfg.default_index,
-        headers          = headers,
-        started_at       = os.time(),
+        handle = tcp,
+        port = actual_port,
+        host = host,
+        root = cfg.root,
+        root_real = root_real,
+        default_index = cfg.default_index,
+        headers = headers,
+        started_at = os.time(),
 
         -- live
-        live_enabled     = cfg.live and cfg.live.enabled ~= false,
-        inject_script    = cfg.live and cfg.live.inject_script ~= false,
-        live_debounce    = (cfg.live and cfg.live.debounce) or 120,
-        css_inject       = cfg.live and cfg.live.css_inject ~= false,
-        sse_clients      = {},
-        debounce_timer   = uv.new_timer(),
+        live_enabled = cfg.live and cfg.live.enabled ~= false,
+        inject_script = cfg.live and cfg.live.inject_script ~= false,
+        live_debounce = (cfg.live and cfg.live.debounce) or 120,
+        css_inject = cfg.live and cfg.live.css_inject ~= false,
+        sse_clients = {},
+        debounce_timer = uv.new_timer(),
 
         -- features
-        dir_enabled      = not (cfg.features and cfg.features.dirlist and cfg.features.dirlist.enabled == false),
-        dir_show_hidden  = cfg.features and cfg.features.dirlist and cfg.features.dirlist.show_hidden or false,
-        index_names      = cfg.index_names or { "index.html", "index.htm" },
-        ignore_patterns  = util.parse_liveignore(root_real),
+        dir_enabled = not (cfg.features and cfg.features.dirlist and cfg.features.dirlist.enabled == false),
+        dir_show_hidden = cfg.features and cfg.features.dirlist and cfg.features.dirlist.show_hidden or false,
+        index_names = cfg.index_names or { "index.html", "index.htm" },
+        ignore_patterns = util.parse_liveignore(root_real),
         notify_on_reload = cfg.notify_on_reload or false,
 
         -- auth
-        token            = cfg.token,            -- nil = no auth; string = required on protected paths
-        protected_paths  = cfg.protected_paths or {},
+        token = cfg.token, -- nil = no auth; string = required on protected paths
+        protected_paths = cfg.protected_paths or {},
 
         -- /__live/asset root: a directory, or a function returning one.
         -- Lets a caller expose files that live next to its source document
         -- (e.g. images referenced from markdown) without serving that
         -- directory as the root. Token-gated whenever token is set.
-        asset_root       = cfg.asset_root,
+        asset_root = cfg.asset_root,
     }
 
-    if inst.live_enabled then start_fs_watch(inst) end
+    if inst.live_enabled then
+        start_fs_watch(inst)
+    end
 
     ok, bind_err = pcall(function()
         tcp:listen(128, function(err_listen)
-            if err_listen then return end
+            if err_listen then
+                return
+            end
             local sock = uv.new_tcp()
             tcp:accept(sock)
             sock:read_start(function(err_read, chunk)
@@ -502,7 +600,9 @@ function S.start(cfg)
                 end
 
                 local req = parse_request(chunk)
-                if not req then return http_400(sock, "Cannot parse request") end
+                if not req then
+                    return http_400(sock, "Cannot parse request")
+                end
                 if req.method ~= "GET" then
                     return send_response(sock, 405, { ["Content-Type"] = "text/plain" }, "Method Not Allowed")
                 end
@@ -511,15 +611,14 @@ function S.start(cfg)
                 -- and file mapping all use this same string so an encoded or
                 -- slash-padded variant can't reach a protected file ungated.
                 local path_only = normalize_path(req.path)
-                local query     = req.path:match("%?(.*)$") or ""
+                local query = req.path:match("%?(.*)$") or ""
 
                 -- Pull a query-string parameter by key. Anchored to either
                 -- the start of the query or just after an '&' so we don't
                 -- accidentally match a key as a substring of another (e.g.
                 -- 't' inside 'event').
                 local function qparam(key)
-                    return query:match("^" .. key .. "=([^&]*)")
-                        or query:match("&" .. key .. "=([^&]*)")
+                    return query:match("^" .. key .. "=([^&]*)") or query:match("&" .. key .. "=([^&]*)")
                 end
 
                 -- Auth gate. When inst.token is set, the SSE stream, the event
@@ -536,7 +635,9 @@ function S.start(cfg)
                             return true
                         end
                         for _, pat in ipairs(inst.protected_paths) do
-                            if p:find(pat) then return true end
+                            if p:find(pat) then
+                                return true
+                            end
                         end
                         return false
                     end
@@ -544,21 +645,24 @@ function S.start(cfg)
                         local req_token = qparam("t")
                         local decoded = req_token and util.url_decode(req_token) or ""
                         if not util.secure_compare(decoded, inst.token) then
-                            return send_response(sock, 401,
-                                { ["Content-Type"] = "text/plain" }, "Unauthorized")
+                            return send_response(sock, 401, { ["Content-Type"] = "text/plain" }, "Unauthorized")
                         end
                     end
                 end
 
                 -- Special endpoints
                 if path_only == "/__live/script.js" then
-                    return send_response(sock, 200, { ["Content-Type"] = "application/javascript; charset=utf-8" },
-                        CLIENT_JS)
+                    return send_response(
+                        sock,
+                        200,
+                        { ["Content-Type"] = "application/javascript; charset=utf-8" },
+                        CLIENT_JS
+                    )
                 elseif path_only == "/__live/events" then
                     return sse_accept(inst, sock)
                 elseif path_only == "/__live/inject" then
                     local event = qparam("event")
-                    local data  = qparam("data")
+                    local data = qparam("data")
                     if event then
                         local decoded = data and util.url_decode(data) or "{}"
                         sse_broadcast(inst, event, decoded)
@@ -579,7 +683,9 @@ function S.start(cfg)
                         return http_404(sock, "/__live/asset")
                     end
                     local aroot_real = uv.fs_realpath(aroot)
-                    if not aroot_real then return http_404(sock, "/__live/asset") end
+                    if not aroot_real then
+                        return http_404(sock, "/__live/asset")
+                    end
                     local ok_real, real = pcall(uv.fs_realpath, util.joinpath(aroot_real, rel))
                     if not ok_real or not real or not util.path_has_prefix(real, aroot_real) then
                         return http_404(sock, "/__live/asset")
@@ -589,7 +695,9 @@ function S.start(cfg)
 
                 -- Map path
                 local mapped = sanitize_and_map(path_only, inst.root_real)
-                if not mapped then return http_404(sock, req.path) end
+                if not mapped then
+                    return http_404(sock, req.path)
+                end
 
                 local st = uv.fs_stat(mapped)
                 if st and st.type == "directory" then
@@ -599,7 +707,10 @@ function S.start(cfg)
                     else
                         for _, iname in ipairs(inst.index_names) do
                             local try = util.joinpath(mapped, iname)
-                            if uv.fs_stat(try) then candidate = try; break end
+                            if uv.fs_stat(try) then
+                                candidate = try
+                                break
+                            end
                         end
                     end
                     if candidate and uv.fs_stat(candidate) then
@@ -619,20 +730,30 @@ function S.start(cfg)
             end)
         end)
     end)
-    if not ok then error(bind_err or "listen failed") end
+    if not ok then
+        error(bind_err or "listen failed")
+    end
 
     return inst
 end
 
 function S.stop(inst)
-    if inst.debounce_timer then pcall(function()
+    if inst.debounce_timer then
+        pcall(function()
             inst.debounce_timer:stop()
             inst.debounce_timer:close()
-        end) end
-    for _, cl in ipairs(inst.sse_clients) do pcall(function() cl:close() end) end
+        end)
+    end
+    for _, cl in ipairs(inst.sse_clients) do
+        pcall(function()
+            cl:close()
+        end)
+    end
     inst.sse_clients = {}
     stop_fs_watch(inst)
-    pcall(function() inst.handle:close() end)
+    pcall(function()
+        inst.handle:close()
+    end)
 end
 
 function S.update_target(inst, new_root, new_index)
@@ -640,7 +761,9 @@ function S.update_target(inst, new_root, new_index)
     inst.root_real = uv.fs_realpath(new_root) or inst.root_real
     inst.default_index = new_index
     inst.ignore_patterns = util.parse_liveignore(inst.root_real)
-    if inst.live_enabled then start_fs_watch(inst) end
+    if inst.live_enabled then
+        start_fs_watch(inst)
+    end
 end
 
 -- Live-reload controls
@@ -651,8 +774,10 @@ function S.reload(inst, reason_path)
     sse_broadcast(inst, "reload", payload)
     if inst.notify_on_reload then
         vim.schedule(function()
-            util.notify(("Reload%s → %s"):format(is_css and " (CSS)" or "", rp ~= "" and rp or "manual"),
-                { notify = true })
+            util.notify(
+                ("Reload%s → %s"):format(is_css and " (CSS)" or "", rp ~= "" and rp or "manual"),
+                { notify = true }
+            )
         end)
     end
 end
@@ -663,14 +788,24 @@ end
 
 function S.enable_live(inst, enable)
     enable = not not enable
-    if inst.live_enabled == enable then return enable end
+    if inst.live_enabled == enable then
+        return enable
+    end
     inst.live_enabled = enable
-    if enable then start_fs_watch(inst) else stop_fs_watch(inst) end
+    if enable then
+        start_fs_watch(inst)
+    else
+        stop_fs_watch(inst)
+    end
     return enable
 end
 
-function S.is_live_enabled(inst) return inst.live_enabled end
+function S.is_live_enabled(inst)
+    return inst.live_enabled
+end
 
-function S.connected_client_count(inst) return #inst.sse_clients end
+function S.connected_client_count(inst)
+    return #inst.sse_clients
+end
 
 return S

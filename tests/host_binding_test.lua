@@ -23,7 +23,9 @@ for _, addrs in pairs(uv.interface_addresses() or {}) do
             break
         end
     end
-    if lan_ip then break end
+    if lan_ip then
+        break
+    end
 end
 
 local tmpdir = H.tmpdir()
@@ -100,8 +102,12 @@ if lan_ip and lan_ip ~= "127.0.0.1" then
     if r.status == 200 then
         ok(true, ("LAN IP %s reachable on 0.0.0.0 bind"):format(lan_ip))
     else
-        H.skip(("LAN IP %s not reachable (status %d): likely a host firewall; bind address asserted above")
-            :format(lan_ip, r.status))
+        H.skip(
+            ("LAN IP %s not reachable (status %d): likely a host firewall; bind address asserted above"):format(
+                lan_ip,
+                r.status
+            )
+        )
     end
 else
     H.skip("could not determine LAN IP, skipping LAN-reachable check")

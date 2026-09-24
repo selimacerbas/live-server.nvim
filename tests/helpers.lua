@@ -37,7 +37,13 @@ function H.isolate()
     vim.env.XDG_STATE_HOME = root .. "/state"
     for _, kind in ipairs({ "cache", "data", "state" }) do
         if vim.fn.stdpath(kind):find(root, 1, true) ~= 1 then
-            error(("H.isolate: stdpath('%s') did not follow XDG_%s_HOME: %s"):format(kind, kind:upper(), vim.fn.stdpath(kind)))
+            error(
+                ("H.isolate: stdpath('%s') did not follow XDG_%s_HOME: %s"):format(
+                    kind,
+                    kind:upper(),
+                    vim.fn.stdpath(kind)
+                )
+            )
         end
     end
     return root
@@ -89,7 +95,12 @@ end
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
     for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
-        prove_module(H.root, modname, "the checkout", "a name the runtimepath reads differently: a comma, a dollar sign, a glob character")
+        prove_module(
+            H.root,
+            modname,
+            "the checkout",
+            "a name the runtimepath reads differently: a comma, a dollar sign, a glob character"
+        )
     end
     return H.root
 end
@@ -123,7 +134,23 @@ end
 -- reports code 0, so curl_exit reads it the shell's way, 128 + the signal;
 -- the timeout's own code (124) wins over the signal it sends.
 function H.http_get(url, headers)
-    local cmd = { "curl", "-q", "-g", "--path-as-is", "--noproxy", "*", "-s", "--max-time", "5", "--connect-timeout", "2", "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}" }
+    local cmd = {
+        "curl",
+        "-q",
+        "-g",
+        "--path-as-is",
+        "--noproxy",
+        "*",
+        "-s",
+        "--max-time",
+        "5",
+        "--connect-timeout",
+        "2",
+        "-o",
+        "-",
+        "-w",
+        "\nHTTPSTATUS:%{http_code}",
+    }
     for _, h in ipairs(headers or {}) do
         table.insert(cmd, "-H")
         table.insert(cmd, h)
@@ -164,7 +191,9 @@ end
 -- (measured on 0.10.0 and 0.12.5), so H.errors and H.expect_error drain the
 -- loop before they read it.
 local function drain()
-    vim.wait(10, function() return false end)
+    vim.wait(10, function()
+        return false
+    end)
 end
 
 -- Every error message Neovim reported since the helper loaded.
@@ -318,7 +347,10 @@ local function exit_must_fail()
     if not verdict then
         -- The drain inside H.finish() serves a callback chain until it stops,
         -- so a quit from one ends the run before the ruling prints (measured).
-        say(finishing and "a quit ran inside H.finish()'s drain; the suite's own ruling never printed" or "suite ended without H.finish()")
+        say(
+            finishing and "a quit ran inside H.finish()'s drain; the suite's own ruling never printed"
+                or "suite ended without H.finish()"
+        )
         return true
     end
     local late = H.errors()

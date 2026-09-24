@@ -36,13 +36,13 @@ ok(not util.secure_compare(nil, "abc"), "secure_compare nil arg")
 H.section("Section 2: server enforces token")
 local TOKEN = util.random_token(16)
 local inst = server.start({
-	port = 0, -- OS-assigned
-	root = tmpdir,
-	default_index = f1,
-	token = TOKEN,
-	protected_paths = { "^/content%.md$" },
-	live = { inject_script = false },
-	features = { dirlist = { enabled = false } },
+    port = 0, -- OS-assigned
+    root = tmpdir,
+    default_index = f1,
+    token = TOKEN,
+    protected_paths = { "^/content%.md$" },
+    live = { inject_script = false },
+    features = { dirlist = { enabled = false } },
 })
 local port = inst.port
 
@@ -96,11 +96,11 @@ server.stop(inst)
 -- ─── Section 3: backward compat (no token in cfg) ───────────────────────────
 H.section("Section 3: no token = no auth (backward compat)")
 inst = server.start({
-	port = 0,
-	root = tmpdir,
-	default_index = f1,
-	live = { inject_script = false },
-	features = { dirlist = { enabled = false } },
+    port = 0,
+    root = tmpdir,
+    default_index = f1,
+    live = { inject_script = false },
+    features = { dirlist = { enabled = false } },
 })
 port = inst.port
 

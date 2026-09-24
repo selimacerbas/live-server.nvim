@@ -11,7 +11,7 @@ H.isolate()
 H.rtp()
 
 local server = require("live_server.server")
-local lutil  = require("live_server.util")
+local lutil = require("live_server.util")
 local eq, http_get, write_file = H.eq, H.http_get, H.write_file
 
 -- Layout:
@@ -61,7 +61,9 @@ local current_root = tmpdir .. "/src"
 inst = server.start({
     port = 0,
     root = tmpdir .. "/www",
-    asset_root = function() return current_root end,
+    asset_root = function()
+        return current_root
+    end,
     live = { inject_script = false },
     features = { dirlist = { enabled = false } },
 })

@@ -29,6 +29,8 @@ vim.api.nvim_create_user_command("LiveServerStopAll", function()
 end, { desc = "LiveServer: stop all" })
 
 vim.api.nvim_create_autocmd("VimLeavePre", {
-    callback = function() LS.stop_all() end,
+    callback = function()
+        LS.stop_all()
+    end,
     desc = "LiveServer: stop all servers on exit",
 })
