@@ -3,42 +3,15 @@
 --   - "127.0.0.1" (default) is reachable on loopback but not on the LAN IP
 --   - "0.0.0.0" is reachable on both
 --
--- Run: nvim --headless -u NONE -c "set rtp^=." -c "luafile tests/host_binding_test.lua" -c "qa!"
+-- Run: nvim --headless -u NONE -l tests/host_binding_test.lua
 
-local uv     = vim.loop
+local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
+H.isolate()
+H.rtp()
+
+local uv = vim.uv or vim.loop
 local server = require("live_server.server")
-
-local passed = 0
-local failed = 0
-
-local function ok(cond, msg)
-    if cond then
-        passed = passed + 1
-        print("  PASS: " .. msg)
-    else
-        failed = failed + 1
-        print("  FAIL: " .. msg)
-    end
-end
-
-local function eq(a, b, msg)
-    if a == b then
-        passed = passed + 1
-        print("  PASS: " .. msg)
-    else
-        failed = failed + 1
-        print(string.format("  FAIL: %s (got %s, want %s)", msg, tostring(a), tostring(b)))
-    end
-end
-
--- curl GET; connect-timeout of 2s so we fail fast on refused connections.
-local function http_get(url)
-    local cmd = { "curl", "-s", "--connect-timeout", "2",
-                  "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}", url }
-    local out = vim.fn.system(cmd)
-    local body, status = out:match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
-    return { status = tonumber(status) or 0, body = body or "" }
-end
+local ok, eq, http_get = H.ok, H.eq, H.http_get
 
 -- Detect primary LAN IP via libuv (portable; `hostname -I` is Linux-only
 -- and on macOS/BSD yields garbage that poisons the URL checks below).
@@ -53,17 +26,12 @@ for _, addrs in pairs(uv.interface_addresses() or {}) do
     if lan_ip then break end
 end
 
-local tmpdir = vim.fn.tempname()
-vim.fn.mkdir(tmpdir, "p")
+local tmpdir = H.tmpdir()
 local idx = vim.fs.joinpath(tmpdir, "index.html")
-do
-    local fd = uv.fs_open(idx, "w", 420)
-    uv.fs_write(fd, "<html><body>ok</body></html>", 0)
-    uv.fs_close(fd)
-end
+H.write_file(idx, "<html><body>ok</body></html>")
 
 -- ─── Section 0: cfg.host omitted defaults to loopback ────────────────────────
-print("Section 0: default host is 127.0.0.1 when cfg.host is omitted")
+H.section("Section 0: default host is 127.0.0.1 when cfg.host is omitted")
 
 local dinst = server.start({
     port = 0,
@@ -78,7 +46,7 @@ eq(dr.status, 200, "loopback reachable on default bind")
 server.stop(dinst)
 
 -- ─── Section 1: default host stores "127.0.0.1" on inst ──────────────────────
-print("\nSection 1: inst.host reflects configured bind address")
+H.section("Section 1: inst.host reflects configured bind address")
 
 local inst = server.start({
     port = 0,
@@ -104,7 +72,7 @@ end
 server.stop(inst)
 
 -- ─── Section 2: host = "0.0.0.0" is reachable on both interfaces ─────────────
-print("\nSection 2: host = '0.0.0.0' reachable on loopback and LAN IP")
+H.section("Section 2: host = '0.0.0.0' reachable on loopback and LAN IP")
 
 inst = server.start({
     port = 0,
@@ -140,8 +108,4 @@ end
 server.stop(inst)
 
 -- ─── Summary ─────────────────────────────────────────────────────────────────
-print(string.format("\n========================================"))
-print(string.format("Results: %d passed, %d failed", passed, failed))
-print(string.format("========================================"))
-
-if failed > 0 then vim.cmd("cq 1") end
+H.finish()

@@ -3,63 +3,25 @@
 -- listed in cfg.protected_paths, while leaving static assets (index.html)
 -- reachable without auth.
 --
--- Run: nvim --headless -c "set rtp+=." -c "luafile tests/token_auth_test.lua" -c "qa!"
+-- Run: nvim --headless -u NONE -l tests/token_auth_test.lua
 
-local uv = vim.loop
+local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
+H.isolate()
+H.rtp()
+
 local server = require("live_server.server")
 local util = require("live_server.util")
-
-local passed = 0
-local failed = 0
-
-local function ok(cond, msg)
-	if cond then
-		passed = passed + 1
-		print("  PASS: " .. msg)
-	else
-		failed = failed + 1
-		print("  FAIL: " .. msg)
-	end
-end
-
-local function eq(a, b, msg)
-	if a == b then
-		passed = passed + 1
-		print("  PASS: " .. msg)
-	else
-		failed = failed + 1
-		print(string.format("  FAIL: %s (got %s, want %s)", msg, tostring(a), tostring(b)))
-	end
-end
-
--- Synchronous HTTP GET via curl. Returns { status, body }.
-local function http_get(url, headers)
-	local cmd = { "curl", "-s", "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}", url }
-	for _, h in ipairs(headers or {}) do
-		table.insert(cmd, 2, "-H")
-		table.insert(cmd, 3, h)
-	end
-	local out = vim.fn.system(cmd)
-	local body, status = out:match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
-	return { status = tonumber(status), body = body or "" }
-end
+local ok, eq, http_get = H.ok, H.eq, H.http_get
 
 -- Workspace with two files
-local tmpdir = vim.fn.tempname()
-vim.fn.mkdir(tmpdir, "p")
+local tmpdir = H.tmpdir()
 local f1 = vim.fs.joinpath(tmpdir, "index.html")
 local f2 = vim.fs.joinpath(tmpdir, "content.md")
-do
-	local fd = uv.fs_open(f1, "w", 420)
-	uv.fs_write(fd, "<html><body>hi</body></html>", 0)
-	uv.fs_close(fd)
-	fd = uv.fs_open(f2, "w", 420)
-	uv.fs_write(fd, "# secret content", 0)
-	uv.fs_close(fd)
-end
+H.write_file(f1, "<html><body>hi</body></html>")
+H.write_file(f2, "# secret content")
 
 -- ─── Section 1: random_token / secure_compare ───────────────────────────────
-print("Section 1: helpers")
+H.section("Section 1: helpers")
 local t1 = util.random_token(16)
 local t2 = util.random_token(16)
 eq(#t1, 32, "random_token(16) returns 32 hex chars")
@@ -70,8 +32,23 @@ ok(not util.secure_compare("abc", "abd"), "secure_compare unequal strings")
 ok(not util.secure_compare("abc", "abcd"), "secure_compare different lengths")
 ok(not util.secure_compare(nil, "abc"), "secure_compare nil arg")
 
+local uv = vim.uv or vim.loop
+eq(H.http_get("http://127.0.0.1:9/").status, 0, "a refused connection yields status 0")
+
+-- A listener that completes the handshake and never answers: the bounded
+-- curl must give up on its own, and the helper must report that as 0.
+local hold = uv.new_tcp()
+hold:bind("127.0.0.1", 0)
+hold:listen(1, function() end)
+local t0 = uv.hrtime()
+local stalled = H.http_get(("http://127.0.0.1:%d/"):format(hold:getsockname().port))
+eq(stalled.status, 0, "a stalled server yields status 0")
+eq(stalled.curl_exit, 28, "curl reports its timeout (exit 28)")
+ok((uv.hrtime() - t0) / 1e9 < 8, "the stalled request returned within the bound")
+hold:close()
+
 -- ─── Section 2: server with token ───────────────────────────────────────────
-print("\nSection 2: server enforces token")
+H.section("Section 2: server enforces token")
 local TOKEN = util.random_token(16)
 local inst = server.start({
 	port = 0, -- OS-assigned
@@ -132,7 +109,7 @@ eq(r.status, 200, "//content.md with correct token still serves")
 server.stop(inst)
 
 -- ─── Section 3: backward compat (no token in cfg) ───────────────────────────
-print("\nSection 3: no token = no auth (backward compat)")
+H.section("Section 3: no token = no auth (backward compat)")
 inst = server.start({
 	port = 0,
 	root = tmpdir,
@@ -151,8 +128,4 @@ eq(r.status, 200, "/__live/inject reachable when token not configured")
 server.stop(inst)
 
 -- ─── Summary ────────────────────────────────────────────────────────────────
-print(string.format("\n========================================"))
-print(string.format("Results: %d passed, %d failed", passed, failed))
-print(string.format("========================================"))
-
-if failed > 0 then vim.cmd("cq 1") end
+H.finish()

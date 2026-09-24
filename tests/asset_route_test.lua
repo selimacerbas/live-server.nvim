@@ -4,45 +4,22 @@
 --   - requires ?t=<token> when token auth is configured
 --   - rejects traversal, absolute paths, and schemes
 --
--- Run: nvim --headless -u NONE -c "set rtp^=." -l tests/asset_route_test.lua
+-- Run: nvim --headless -u NONE -l tests/asset_route_test.lua
 
-local uv     = vim.loop
+local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
+H.isolate()
+H.rtp()
+
 local server = require("live_server.server")
 local lutil  = require("live_server.util")
-
-local passed = 0
-local failed = 0
-
-local function eq(a, b, msg)
-    if a == b then
-        passed = passed + 1
-        print("  PASS: " .. msg)
-    else
-        failed = failed + 1
-        print(string.format("  FAIL: %s (got %s, want %s)", msg, tostring(a), tostring(b)))
-    end
-end
-
-local function http_get(url)
-    local cmd = { "curl", "-s", "--connect-timeout", "2",
-                  "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}", url }
-    local out = vim.fn.system(cmd)
-    local body, status = out:match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
-    return { status = tonumber(status) or 0, body = body or "" }
-end
-
-local function write_file(path, data)
-    local fd = uv.fs_open(path, "w", 420)
-    uv.fs_write(fd, data, 0)
-    uv.fs_close(fd)
-end
+local eq, http_get, write_file = H.eq, H.http_get, H.write_file
 
 -- Layout:
 --   tmpdir/www/index.html          (served root)
 --   tmpdir/src/pic.png             (asset root)
 --   tmpdir/src/sub/nested.txt
 --   tmpdir/secret.txt              (outside asset root)
-local tmpdir = vim.fn.tempname()
+local tmpdir = H.tmpdir()
 vim.fn.mkdir(tmpdir .. "/www", "p")
 vim.fn.mkdir(tmpdir .. "/src/sub", "p")
 write_file(tmpdir .. "/www/index.html", "<html><body>ok</body></html>")
@@ -52,7 +29,7 @@ write_file(tmpdir .. "/secret.txt", "SECRET")
 
 local TOKEN = lutil.random_token(16)
 
-print("Section 1: token-gated asset route (asset_root as string)")
+H.section("Section 1: token-gated asset route (asset_root as string)")
 
 local inst = server.start({
     port = 0,
@@ -78,7 +55,7 @@ eq(http_get(base .. "/__live/asset?t=" .. TOKEN).status, 404, "missing p param i
 
 server.stop(inst)
 
-print("\nSection 2: asset_root as function, no token configured")
+H.section("Section 2: asset_root as function, no token configured")
 
 local current_root = tmpdir .. "/src"
 inst = server.start({
@@ -97,7 +74,7 @@ eq(http_get(base .. "/__live/asset?p=pic.png").status, 404, "old root no longer 
 
 server.stop(inst)
 
-print("\nSection 3: no asset_root configured")
+H.section("Section 3: no asset_root configured")
 
 inst = server.start({
     port = 0,
@@ -109,8 +86,4 @@ base = ("http://127.0.0.1:%d"):format(inst.port)
 eq(http_get(base .. "/__live/asset?p=pic.png").status, 404, "asset route 404s when asset_root unset")
 server.stop(inst)
 
-print(string.format("\n========================================"))
-print(string.format("Results: %d passed, %d failed", passed, failed))
-print(string.format("========================================"))
-
-if failed > 0 then vim.cmd("cq 1") end
+H.finish()
