@@ -122,10 +122,14 @@ end
 
 -- The repository root is the parent of tests/, whatever the current
 -- directory. H.root is canonical, and tests build plugin paths and compare
--- names from it; root_entry names the same directory the way the helper was
--- loaded, which is what the runtimepath gets: a plain-named link to a
--- directory whose real name carries a comma or a $ loads through its own
--- name, where the physical one would be split or expanded.
+-- names from it; root_entry names the same directory by the name the helper
+-- was loaded through, as given, which is what the runtimepath gets: a
+-- plain-named link to a directory whose real name carries a comma or a $
+-- loads through its own name, where the physical one would be split or
+-- expanded. That holds for an absolute load name only: :p makes a relative
+-- one absolute against the physical working directory, which has no link
+-- in it (measured), so tests/run.sh passes each suite by its absolute
+-- logical name.
 local root_entry = vim.fs.normalize(vim.fn.fnamemodify(tests_dir, ":p:h:h"), { expand_env = false })
 H.root = H.canon(root_entry)
 
@@ -402,13 +406,17 @@ local function exit_now(code, ...)
     return real_exit(code, ...)
 end
 
--- An exit ruling's reason, through io.stdout with a newline on both sides: on
--- 0.12 a print line ends only when the next begins, and cq and os.exit skip
--- the newline a normal exit writes, which glued the next line of output (a CI
--- ::endgroup:: marker) onto it; print on 0.10.0 ends a line in \r\n and cut
--- a long message short under textlock (measured).
-local function say(msg)
-    io.stdout:write("\n" .. msg .. "\n")
+-- A line on a line of its own, straight to stdout, for an exit ruling's
+-- reason and for every line a parent process reads back: print ends a line
+-- only when the next message begins, so text written after it lands on its
+-- line (0.10.0 and 0.12.5), and cq and os.exit skip the newline a normal exit
+-- writes, which glued the next line of output (a CI ::endgroup:: marker)
+-- onto it; on 0.12.5 a print line that fills a multiple of 80 columns loses
+-- its newline to the next one, so the width of a path decided whether two
+-- lines stayed two; print on 0.10.0 ends a line in \r\n and cut a long
+-- message short under textlock (all measured). Hence a newline on both sides.
+function H.write_line(line)
+    io.stdout:write("\n" .. line .. "\n")
 end
 
 function H.section(title)
@@ -468,7 +476,7 @@ function H.finish()
     if verdict == "fail" then
         local ok, err = pcall(vim.cmd, "cq 1")
         if not ok then
-            say("cq refused: " .. headline(tostring(err)))
+            H.write_line("cq refused: " .. headline(tostring(err)))
         end
         exit_now(1)
     end
@@ -486,7 +494,7 @@ local function exit_must_fail()
     if not verdict then
         -- The drain inside H.finish() serves a callback chain until it stops,
         -- so a quit from one ends the run before the ruling prints (measured).
-        say(
+        H.write_line(
             finishing and "a quit ran inside H.finish()'s drain; the suite's own ruling never printed"
                 or "suite ended without H.finish()"
         )
@@ -494,7 +502,7 @@ local function exit_must_fail()
     end
     local late = H.errors()
     if #late > 0 then
-        say("error reported after H.finish(): " .. headline(late[#late]))
+        H.write_line("error reported after H.finish(): " .. headline(late[#late]))
         return true
     end
     return false
@@ -512,7 +520,7 @@ local function exit_must_fail_closed()
     end
     local ok, must_fail = pcall(exit_must_fail)
     if not ok then
-        say("exit ruling raised: " .. tostring(must_fail))
+        H.write_line("exit ruling raised: " .. tostring(must_fail))
         must_fail = true
     end
     exit_failed = must_fail
