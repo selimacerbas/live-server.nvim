@@ -101,6 +101,9 @@ jobs:
     name: windows (nvim stable)
     runs-on: windows-latest
     timeout-minutes: 15
+    # The run's conclusion follows the required check; this job is read from
+    # its own conclusion (a red one is a finding for F-01, never a merge block).
+    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -158,5 +161,5 @@ jobs:
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
         run: |
-          echo "test=$TEST floor=$FLOOR lint-workflows=$LINT"
+          echo "test=$TEST floor=$FLOOR lint-workflows=$LINT format=$FORMAT"
           [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ]

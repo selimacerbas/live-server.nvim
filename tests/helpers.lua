@@ -1,8 +1,8 @@
 -- tests/helpers.lua
 -- Shared by every headless suite: XDG isolation for everything a suite
--- creates, a bounded curl and one pass/fail ledger whose exit code is the
--- ruling. Loaded by path (dofile), never by require, so nothing under tests/
--- joins the plugin's public module tree.
+-- creates, one spelling per path, a bounded curl and one pass/fail ledger
+-- whose exit code is the ruling. Loaded by path (dofile), never by require,
+-- so nothing under tests/ joins the plugin's public module tree.
 local uv = vim.uv or vim.loop
 local H = {}
 
@@ -18,9 +18,32 @@ local tests_dir = vim.fs.dirname(debug.getinfo(1, "S").source:sub(2))
 -- file replaces it: a ruling that must end the run calls it directly.
 local real_exit = os.exit
 
+local is_win = vim.fn.has("win32") == 1
+
+-- One spelling per file, so a suite compares names by value and a message
+-- prints the name a test builds: absolute, then the name the filesystem
+-- gives where the path exists (it folds a symlink, /var against /private/var
+-- on macOS and an 8.3 short name such as RUNNER~1, which tempname() returns
+-- on Windows), then forward slashes and no trailing one, a $ kept literal.
+-- realpath needs the path to exist, so a name not yet created keeps its :p
+-- form: build it from a canonical parent.
+function H.canon(path)
+    local full = vim.fn.fnamemodify(path, ":p")
+    return vim.fs.normalize(uv.fs_realpath(full) or full, { expand_env = false })
+end
+
+-- Whether two names denote one file; Windows file systems fold case.
+function H.same_path(a, b)
+    a, b = H.canon(a), H.canon(b)
+    if is_win then
+        return a:lower() == b:lower()
+    end
+    return a == b
+end
+
 -- The repository root is the parent of tests/, whatever the current
--- directory; tests build plugin paths from it.
-H.root = vim.fn.fnamemodify(tests_dir, ":p:h:h")
+-- directory; tests build plugin paths from it, so it is canonical.
+H.root = H.canon(vim.fn.fnamemodify(tests_dir, ":p:h:h"))
 
 -- A fresh XDG tree per run: stdpath() reads the variables at call time
 -- (measured on 0.12.5), so cache, data and state move for everything created
@@ -59,12 +82,13 @@ end
 -- it: runtimepath entries in order, and in each lua/<mod>.lua before
 -- lua/<mod>/init.lua, so a flat file in an earlier entry wins (measured).
 -- The entries are the search path Neovim built, after it split, expanded
--- and globbed the option.
+-- and globbed the option (with backslashes on Windows), so the file comes
+-- back canonical.
 local function first_hit(modname)
     for _, entry in ipairs(vim.api.nvim_list_runtime_paths()) do
         for _, form in ipairs(module_forms(modname)) do
             if uv.fs_stat(entry .. form) then
-                return vim.fs.normalize(entry .. form, { expand_env = false })
+                return H.canon(entry .. form)
             end
         end
     end
@@ -79,19 +103,20 @@ local function prove_module(root, modname, label, reason)
     local own
     for _, form in ipairs(module_forms(modname)) do
         if uv.fs_stat(root .. form) then
-            own = vim.fs.normalize(root .. form, { expand_env = false })
+            own = root .. form
             break
         end
     end
     local hit = first_hit(modname)
-    if not own or hit ~= own then
-        error(("%s at %s does not resolve: %s (%s)"):format(label, root, tostring(hit), reason), 2)
+    if not (own and hit and H.same_path(hit, own)) then
+        error(("%s at %s does not resolve: %s (%s)"):format(label, H.canon(root), tostring(hit), reason), 2)
     end
 end
 
 -- The checkout goes first on the runtimepath and proves it is the copy
--- require loads. markdown-preview carries this file verbatim except here: it
--- proves its own modules and then finds live-server as a dependency.
+-- require loads; the root it returns is H.root, canonical like every path
+-- the harness prints. markdown-preview carries this file verbatim except
+-- here: it proves its own modules and then finds live-server as a dependency.
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
     for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
@@ -132,7 +157,11 @@ end
 -- a SIGINT during its wait ends the suite, where vim.fn.system left a Neovim
 -- that ignored INT and TERM (measured on 0.12.5). A curl killed by a signal
 -- reports code 0, so curl_exit reads it the shell's way, 128 + the signal;
--- the timeout's own code (124) wins over the signal it sends.
+-- the timeout's own code (124) wins over the signal it sends. Windows
+-- retries a refused loopback connect for about two seconds before it
+-- reports the refusal, so a connect bound of 2 read a refused port as a
+-- timeout there (curl 28 on the first hosted run); the bound sits above that
+-- window and below --max-time, so refused is curl 7 on every platform.
 function H.http_get(url, headers)
     local cmd = {
         "curl",
@@ -145,7 +174,7 @@ function H.http_get(url, headers)
         "--max-time",
         "5",
         "--connect-timeout",
-        "2",
+        "4",
         "-o",
         "-",
         "-w",

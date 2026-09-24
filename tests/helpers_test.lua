@@ -122,7 +122,9 @@ H.section("Section 3: the exit code is the ruling")
 -- instead of a stalled suite; vim.system reports that timeout as exit 124.
 -- opts.env adds to the child's environment, opts.helpers loads another copy
 -- of the helper, opts.prelude runs before the helper loads and opts.cwd is
--- the child's working directory.
+-- the child's working directory. A Windows child ends its lines in \r\n,
+-- which a pattern naming \n missed (the first hosted run), so the output is
+-- read with every line end folded to \n, once, here.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child_exit(body, expect, opts)
@@ -136,7 +138,8 @@ local function child_exit(body, expect, opts)
     if r.code == 124 then
         return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
     end
-    if not ((r.stdout or "") .. (r.stderr or "")):find(expect) then
+    local out = ((r.stdout or "") .. (r.stderr or "")):gsub("\r+\n", "\n")
+    if not out:find(expect) then
         return ("exit %d without %q"):format(r.code, expect)
     end
     return r.code
@@ -215,6 +218,19 @@ H.finish()]],
     ),
     1,
     "os.exit(0) from a callback in an unfinished suite exits 1 with the message on its own line"
+)
+-- A child that writes \r\n itself pins the fold on every platform; one CR
+-- more, as a text-mode stdout on Windows would add, folds the same.
+eq(
+    child_exit(
+        [[
+io.stdout:write("\r\nfolded\r\r\n")
+H.ok(true, "x")
+H.finish()]],
+        "\nfolded\n"
+    ),
+    0,
+    "a child's \\r\\n line ends read as \\n"
 )
 -- A quit a callback still holds when the main chunk ends runs during Neovim's
 -- teardown, after the ruling, and set the exit code again (measured).
@@ -512,7 +528,7 @@ else
     eq(
         child_exit(
             "H.rtp()",
-            vim.pesc(("the checkout at %s does not resolve: %s/lua/"):format(root, installed)),
+            vim.pesc(("the checkout at %s does not resolve: %s/lua/"):format(H.canon(root), H.canon(installed))),
             { helpers = root .. "/tests/helpers.lua", env = { XDG_DATA_HOME = data } }
         ),
         1,
