@@ -5,7 +5,9 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly: catches Neovim nightly drift while no commit lands here.
+    # Weekly: catches Neovim nightly drift.
+    # GitHub pauses a schedule after 60 days without a commit; re-enable it
+    # from the Actions tab when that happens.
     - cron: "17 5 * * 1"
   workflow_dispatch:
 
@@ -14,7 +16,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a PR's superseded run is cancelled; a cancelled run on main would
+  # leave that commit with a red ci-ok and no verdict.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -41,13 +45,16 @@ jobs:
       - name: Headless tests
         env:
           XDG_STATE_HOME: ${{ runner.temp }}/xdg-state
+        # Every suite runs even after one fails, so a red run names them all.
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          fail=0
           for t in tests/*_test.lua; do
             echo "::group::$t"
-            nvim --headless -u NONE -l "$t"
+            nvim --headless -u NONE -l "$t" || fail=1
             echo "::endgroup::"
           done
+          exit "$fail"
       - name: Help tags build clean
         run: >-
           nvim --headless -u NONE
@@ -68,16 +75,21 @@ jobs:
         with:
           neovim: true
           version: v0.10.0
+      - name: Version
+        run: nvim --version | head -n 3
       - name: Headless tests
         env:
           XDG_STATE_HOME: ${{ runner.temp }}/xdg-state
+        # Every suite runs even after one fails, so a red run names them all.
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          fail=0
           for t in tests/*_test.lua; do
             echo "::group::$t"
-            nvim --headless -u NONE -l "$t"
+            nvim --headless -u NONE -l "$t" || fail=1
             echo "::endgroup::"
           done
+          exit "$fail"
 
   # Measured, not required: it turns the Windows token fallback (no
   # /dev/urandom) and NTFS case folding from inferred into observed. It joins
@@ -98,13 +110,16 @@ jobs:
         shell: bash
         env:
           XDG_STATE_HOME: ${{ runner.temp }}/xdg-state
+        # Every suite runs even after one fails, so a red run names them all.
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          fail=0
           for t in tests/*_test.lua; do
             echo "::group::$t"
-            nvim --headless -u NONE -l "$t"
+            nvim --headless -u NONE -l "$t" || fail=1
             echo "::endgroup::"
           done
+          exit "$fail"
 
   # The one required status check: green only when every gating job is.
   ci-ok:

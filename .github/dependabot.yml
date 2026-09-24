@@ -4,3 +4,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # A week's cooldown before a fresh action release is proposed.
+    cooldown:
+      default-days: 7
