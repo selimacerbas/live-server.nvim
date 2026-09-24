@@ -9,6 +9,8 @@ local H = {}
 local passed, failed, skipped = 0, 0, 0
 -- nil until H.finish() rules, then "pass" or "fail".
 local verdict
+-- Set while H.finish() runs, so a quit its own drain runs is named as such.
+local finishing = false
 local errors = {}
 local tests_dir = vim.fs.dirname(debug.getinfo(1, "S").source:sub(2))
 
@@ -93,7 +95,9 @@ end
 -- by curl's rules, so a test that needs the body asserts on it. vim.system
 -- returns the body byte for byte, where vim.fn.system mapped NUL to SOH, and
 -- a SIGINT during its wait ends the suite, where vim.fn.system left a Neovim
--- that ignored INT and TERM (measured on 0.12.5).
+-- that ignored INT and TERM (measured on 0.12.5). A curl killed by a signal
+-- reports code 0, so curl_exit reads it the shell's way, 128 + the signal;
+-- the timeout's own code (124) wins over the signal it sends.
 function H.http_get(url, headers)
     local cmd = { "curl", "-q", "-g", "--path-as-is", "--noproxy", "*", "-s", "--max-time", "5", "--connect-timeout", "2", "-o", "-", "-w", "\nHTTPSTATUS:%{http_code}" }
     for _, h in ipairs(headers or {}) do
@@ -102,7 +106,7 @@ function H.http_get(url, headers)
     end
     table.insert(cmd, url)
     local result = vim.system(cmd, { text = false, timeout = 8000 }):wait()
-    local curl_exit = result.code
+    local curl_exit = result.code ~= 0 and result.code or (result.signal ~= 0 and 128 + result.signal or 0)
     local body, status = (result.stdout or ""):match("^(.*)\nHTTPSTATUS:(%d+)%s*$")
     if curl_exit ~= 0 then
         return { status = 0, body = body or "", curl_exit = curl_exit }
@@ -179,6 +183,20 @@ local function flush()
     io.stderr:flush()
 end
 
+-- real_exit skips Neovim's teardown, which removes its per-process tempdir
+-- and H.isolate's XDG tree inside it (one left per unfinished red child on
+-- 0.10 and 0.12, measured); tempname() creates that dir on demand if absent.
+local function cleanup()
+    vim.fn.delete(vim.fn.fnamemodify(vim.fn.tempname(), ":h"), "rf")
+end
+
+-- Every exit the helper makes itself: output flushed, the tempdir removed.
+local function exit_now(code, ...)
+    flush()
+    cleanup()
+    return real_exit(code, ...)
+end
+
 -- An exit ruling's reason, through io.stdout with a newline on both sides: on
 -- 0.12 a print line ends only when the next begins, and cq and os.exit skip
 -- the newline a normal exit writes, which glued the next line of output (a CI
@@ -230,6 +248,7 @@ end
 -- (measured), so a cq that raises or returns falls through to the real exit.
 function H.finish()
     open_ledger("H.finish")
+    finishing = true
     for _, e in ipairs(H.errors()) do
         failed = failed + 1
         print("  FAIL: error reported: " .. headline(e))
@@ -246,8 +265,7 @@ function H.finish()
         if not ok then
             say("cq refused: " .. headline(tostring(err)))
         end
-        flush()
-        real_exit(1)
+        exit_now(1)
     end
 end
 
@@ -261,7 +279,9 @@ local function exit_must_fail()
         return true
     end
     if not verdict then
-        say("suite ended without H.finish()")
+        -- The drain inside H.finish() serves a callback chain until it stops,
+        -- so a quit from one ends the run before the ruling prints (measured).
+        say(finishing and "a quit ran inside H.finish()'s drain; the suite's own ruling never printed" or "suite ended without H.finish()")
         return true
     end
     local late = H.errors()
@@ -303,8 +323,7 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     nested = true,
     callback = function()
         if exit_must_fail_closed() and vim.v.exiting ~= 1 then
-            flush()
-            real_exit(1)
+            exit_now(1)
         end
     end,
 })
@@ -325,19 +344,17 @@ os.exit = function(code, ...)
             local close = ...
             vim.schedule(function()
                 if exit_must_fail_closed() then
-                    flush()
-                    return real_exit(1)
+                    return exit_now(1)
                 end
-                return real_exit(code, close)
+                return exit_now(code, close)
             end)
         end
         return
     end
     if exit_must_fail_closed() then
-        flush()
-        return real_exit(1, ...)
+        return exit_now(1, ...)
     end
-    return real_exit(code, ...)
+    return exit_now(code, ...)
 end
 
 return H
