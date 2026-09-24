@@ -1,3 +1,10 @@
+-- live-server.nvim needs Neovim 0.10: vim.uv, vim.fs.joinpath and the -l
+-- test runner. Refusing here spares an older Neovim a stack trace at first use.
+if vim.fn.has("nvim-0.10") == 0 then
+    vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+    return
+end
+
 local LS = require("live_server")
 
 vim.api.nvim_create_user_command("LiveServerStart", function()

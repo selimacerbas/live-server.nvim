@@ -1,6 +1,6 @@
 # live-server.nvim
 
-A tiny, zero-dependency **local web server** for Neovim — written in pure Lua with `vim.loop`.
+A tiny, zero-dependency **local web server** for Neovim — written in pure Lua with `vim.uv`.
 Start a server on any file or folder, auto-reload the browser on save, and quickly reopen existing ports.
 
 * **Pure Lua**: no npm, no Python, no binaries.
@@ -20,7 +20,7 @@ Start a server on any file or folder, auto-reload the browser on save, and quick
 
 ## Requirements
 
-* Neovim **0.8+** (tested on 0.9 / 0.10).
+* Neovim **0.10+**.
 * Linux, macOS, or Windows.
 * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) **recommended** for the best picking UX (falls back to `vim.ui.select/input` if missing).
 * [which-key.nvim](https://github.com/folke/which-key.nvim) recommended.
@@ -308,7 +308,7 @@ Token auth is opt-in. When `cfg.token` is nil (the default), no auth is applied 
 ## Contributing
 
 PRs and issues are welcome!
-Please include your **OS**, **Neovim version**, and (if relevant) **`vim.loop`/luv** version when reporting bugs. Repro steps make fixes fast.
+Please include your **OS**, **Neovim version**, and (if relevant) **`vim.uv`/luv** version when reporting bugs. Repro steps make fixes fast.
 
 ---
 

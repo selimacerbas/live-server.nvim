@@ -54,7 +54,7 @@ function M.setup(opts)
                         return
                     end
                     local dir = util.dirname(file)
-                    local real = vim.loop.fs_realpath(dir)
+                    local real = vim.uv.fs_realpath(dir)
                     if not real then
                         return
                     end
@@ -73,7 +73,7 @@ end
 
 -- Start server for a path (file or directory) on a port
 function start_for_path(path, port)
-    local stat = vim.loop.fs_stat(path)
+    local stat = vim.uv.fs_stat(path)
     if not stat then
         return util.notify("Path not found: " .. path, M.opts, "ERROR")
     end

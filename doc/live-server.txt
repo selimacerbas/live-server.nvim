@@ -8,7 +8,7 @@ License: MIT
 INTRODUCTION                                                *live-server.nvim*
 
 live-server.nvim is a tiny, zero-dependency local web server for Neovim,
-written in pure Lua with `vim.loop`. Start a server on any file or folder,
+written in pure Lua with `vim.uv`. Start a server on any file or folder,
 auto-reload the browser on file changes, and quickly reopen existing ports.
 
 No npm. No Python. No binaries. Just Lua.
@@ -31,7 +31,7 @@ not production.
 ===============================================================================
 REQUIREMENTS                                    *live-server-requirements*
 
-- Neovim 0.8+ (tested on 0.9 / 0.10)
+- Neovim 0.10+
 - Linux, macOS, or Windows
 
 Optional:

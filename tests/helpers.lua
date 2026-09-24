@@ -3,7 +3,7 @@
 -- creates, one spelling per path, a bounded curl and one pass/fail ledger
 -- whose exit code is the ruling. Loaded by path (dofile), never by require,
 -- so nothing under tests/ joins the plugin's public module tree.
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local H = {}
 
 local passed, failed, skipped = 0, 0, 0

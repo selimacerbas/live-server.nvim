@@ -10,7 +10,7 @@ local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub
 local xdg = H.isolate()
 local rtp_dir = H.rtp()
 
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local ok, eq = H.ok, H.eq
 
 H.section("Section 1: root and isolation")
@@ -178,7 +178,7 @@ H.ok(true, "x")
 H.finish()
 io.stdout:write("written before the kill\n")
 io.stdout:flush()
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.kill(uv.os_getpid(), "sigkill")]],
             "written before the kill"
         ),
@@ -230,7 +230,7 @@ eq(
         [[
 H.ok(true, "x")
 H.finish()
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
 os.exit(5)]],
@@ -243,7 +243,7 @@ eq(
     child_exit(
         [[
 H.ok(false, "deliberate")
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(10, 0, function() os.exit(0) end)
 vim.wait(1000, function() return false end)
 H.finish()]],
@@ -320,7 +320,7 @@ eq(
     child_exit(
         [[
 H.ok(false, "deliberate")
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local deadline = uv.hrtime() + 300e6
 local function chain()
     if uv.hrtime() < deadline then
@@ -393,7 +393,7 @@ H.section("Section 4: an error raised in a callback fails the suite")
 eq(
     child_exit(
         [[
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(10, 0, function() error("luv boom") end)
 vim.wait(200, function() return false end)
 H.ok(true, "the assertions pass")
@@ -419,7 +419,7 @@ H.finish()]],
 eq(
     child_exit(
         [[
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local srv = uv.new_tcp()
 srv:bind("127.0.0.1", 0)
 srv:listen(8, function()
@@ -457,7 +457,7 @@ eq(
 H.ok(true, "x")
 H.finish()
 vim.schedule(function() error("late") end)
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 uv.new_timer():start(50, 0, function()
     io.stdout:write("timer fired\n")
     os.exit(0)

@@ -1,4 +1,4 @@
-local uv = vim.loop
+local uv = vim.uv
 local util = require("live_server.util")
 
 local S = {}

@@ -1,4 +1,4 @@
-local uv = vim.loop
+local uv = vim.uv
 local U = {}
 
 function U.notify(msg, opts, level)
