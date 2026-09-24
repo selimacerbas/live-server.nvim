@@ -120,6 +120,21 @@ eq(child_exit('H.ok(true, "x")', "suite ended without H%.finish%(%)"), 1, "a pas
 eq(child_exit('H.ok(true, "x")\nH.finish()\nH.ok(true, "late")', "H%.ok after H%.finish%(%)"), 1, "an assertion after H.finish() exits 1")
 eq(child_exit('H.ok(false, "deliberate")\nos.exit(0)', "suite ended without H%.finish%(%)"), 1, "a failed assertion then os.exit(0) exits 1")
 eq(child_exit('H.ok(true, "x")\nH.finish()\nos.exit(3)', "Results: 1 passed, 0 failed, 0 skipped"), 3, "os.exit after a passing H.finish() keeps its code")
+-- From a timer callback (a fast event) the ruling cannot drain the loop. Each
+-- body ends in a line that fails the case if the timer never fired.
+eq(child_exit([[
+H.ok(true, "x")
+H.finish()
+local uv = vim.uv or vim.loop
+uv.new_timer():start(10, 0, function() os.exit(0) end)
+vim.wait(1000, function() return false end)
+os.exit(5)]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "os.exit(0) from a callback after a passing H.finish() exits 0")
+eq(child_exit([[
+H.ok(false, "deliberate")
+local uv = vim.uv or vim.loop
+uv.new_timer():start(10, 0, function() os.exit(0) end)
+vim.wait(1000, function() return false end)
+H.finish()]], "\nsuite ended without H%.finish%(%)\n"), 1, "os.exit(0) from a callback in an unfinished suite exits 1 with the message on its own line")
 
 H.section("Section 4: an error raised in a callback fails the suite")
 eq(child_exit([[
@@ -164,7 +179,13 @@ H.ok(true, "never reached")
 H.finish()]], "E5113[^\n]*other boom"), 1, "an error fn raises is not swallowed")
 eq(child_exit([[
 H.ok(not H.expect_error("expected boom", function() vim.notify("other boom", vim.log.levels.ERROR) end), "a different message is not consumed")
-H.finish()]], "FAIL: error reported: [^\n]*other boom"), 1, "a different error message stays for the ledger")
+H.finish()]], "Results: 1 passed, 1 failed"), 1, "a different error message stays for the ledger")
+eq(child_exit('H.ok(not H.expect_error("x", function() end), "no error reported gives false")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped"), 0, "no error reported gives false")
+eq(child_exit([[
+H.ok(H.expect_error("expected boom", function()
+    vim.schedule(function() vim.notify("expected boom", vim.log.levels.ERROR) end)
+end), "the expected error was consumed")
+H.finish()]], "Results: 1 passed, 0 failed, 0 skipped"), 0, "an expected error reported through a callback is seen")
 -- The scheduled error already sits in v:errmsg when fn runs, so without the
 -- sample first fn's own message would overwrite it.
 eq(child_exit([[

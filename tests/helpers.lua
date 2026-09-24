@@ -102,23 +102,33 @@ local function headline(e)
     return (e:gsub("\nstack traceback:.*", ""):gsub("\n", " "))
 end
 
--- Every error message Neovim reported since the helper loaded. An error a
--- callback raised while vim.fn.system blocked waits in the event queue and
--- reaches v:errmsg only when the loop runs again (measured on 0.10.0 and
--- 0.12.5), so the loop is drained first.
-function H.errors()
+-- An error a callback raised while vim.fn.system blocked waits in the event
+-- queue and reaches v:errmsg only when the loop runs again (measured on 0.10.0
+-- and 0.12.5), so H.errors and H.expect_error drain the loop before they read
+-- it.
+local function drain()
     vim.wait(10, function() return false end)
+end
+
+-- Every error message Neovim reported since the helper loaded.
+function H.errors()
+    drain()
     sample_errmsg()
     return vim.list_extend({}, errors)
 end
 
 -- Runs fn, which should report an error message containing pattern (plain
--- text), and consumes that one message. Errors already pending are drained
--- into the ledger first, so a callback error from the same window still fails
--- the suite; a message that does not match stays for the ledger too.
+-- text), and consumes that one message. Errors already pending go to the
+-- ledger first, and the loop is drained after fn so a message reported through
+-- a callback is seen; a message that does not match stays for the ledger.
+-- v:errmsg holds one message: when more than one error is reported while fn
+-- runs (its own or a callback's), only the last is compared and the others
+-- are lost, so fn reports one error and a suite expecting several calls
+-- H.expect_error once per error.
 function H.expect_error(pattern, fn)
     H.errors()
     fn()
+    drain()
     if vim.v.errmsg ~= "" and vim.v.errmsg:find(pattern, 1, true) then
         vim.v.errmsg = ""
         return true
@@ -210,12 +220,25 @@ local function exit_must_fail()
     return false
 end
 
+-- The ruling fails closed: an error raised inside it rules exit 1 as well,
+-- where in VimLeavePre it left the exit code at 0 (measured). The message goes
+-- through io.stdout with a leading newline, since the last print line has not
+-- ended yet.
+local function exit_must_fail_closed()
+    local ok, must_fail = pcall(exit_must_fail)
+    if not ok then
+        io.stdout:write("\nexit ruling raised: " .. tostring(must_fail) .. "\n")
+        return true
+    end
+    return must_fail
+end
+
 -- cq inside VimLeavePre sets the exit code under -l (measured on 0.10.0 and
 -- 0.12.5).
 vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("tests_helpers_finish", { clear = true }),
     callback = function()
-        if exit_must_fail() then
+        if exit_must_fail_closed() then
             vim.cmd("cq 1")
         end
     end,
@@ -223,10 +246,20 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
 
 -- os.exit leaves without VimLeavePre, so a suite that called it after a
 -- failed assertion exited 0 with no ruling (measured); it takes the same
--- ruling on the way out.
+-- ruling on the way out. From a libuv callback (a fast event) the ruling
+-- cannot drain (vim.wait raises E5560) and print is dropped before the exit,
+-- so it rules on the verdict alone and writes through io.stdout (measured on
+-- 0.10.0 and 0.12.5).
 local real_exit = os.exit
 os.exit = function(code, ...)
-    if exit_must_fail() then
+    if vim.in_fast_event() then
+        if not verdict then
+            io.stdout:write("\nsuite ended without H.finish()\n")
+            return real_exit(1, ...)
+        end
+        return real_exit(code, ...)
+    end
+    if exit_must_fail_closed() then
         return real_exit(1, ...)
     end
     return real_exit(code, ...)
