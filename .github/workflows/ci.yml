@@ -1,0 +1,123 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly: catches Neovim nightly drift while no commit lands here.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, nvim ${{ matrix.nvim }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        nvim: [stable, nightly]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim }}
+      - name: Version
+        run: nvim --version | head -n 3
+      # -l exits 1 on a Lua error and each suite's H.finish() exits 1 on a
+      # failed assertion; the luafile form the tests once documented did neither.
+      - name: Headless tests
+        env:
+          XDG_STATE_HOME: ${{ runner.temp }}/xdg-state
+        run: |
+          set -euo pipefail
+          for t in tests/*_test.lua; do
+            echo "::group::$t"
+            nvim --headless -u NONE -l "$t"
+            echo "::endgroup::"
+          done
+      - name: Help tags build clean
+        run: >-
+          nvim --headless -u NONE
+          -c 'try | helptags doc | catch | cquit 1 | endtry'
+          -c 'qa!'
+
+  # The advertised minimum, not its last patch: a user on 0.10.0 gets what
+  # the README promises.
+  floor:
+    name: floor (ubuntu-latest, nvim v0.10.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: v0.10.0
+      - name: Headless tests
+        env:
+          XDG_STATE_HOME: ${{ runner.temp }}/xdg-state
+        run: |
+          set -euo pipefail
+          for t in tests/*_test.lua; do
+            echo "::group::$t"
+            nvim --headless -u NONE -l "$t"
+            echo "::endgroup::"
+          done
+
+  # Measured, not required: it turns the Windows token fallback (no
+  # /dev/urandom) and NTFS case folding from inferred into observed. It joins
+  # ci-ok once it has been green (Follow-on F-01).
+  windows:
+    name: windows (nvim stable)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          neovim: true
+          version: stable
+      - name: Headless tests
+        shell: bash
+        env:
+          XDG_STATE_HOME: ${{ runner.temp }}/xdg-state
+        run: |
+          set -euo pipefail
+          for t in tests/*_test.lua; do
+            echo "::group::$t"
+            nvim --headless -u NONE -l "$t"
+            echo "::endgroup::"
+          done
+
+  # The one required status check: green only when every gating job is.
+  ci-ok:
+    if: always()
+    needs: [test, floor]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every gating job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = "success" ] || exit 1
+          done
