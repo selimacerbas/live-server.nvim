@@ -1,8 +1,8 @@
 -- tests/floor_guard_test.lua
--- Below Neovim 0.10 the plugin file defines no command and the module
--- answers a config's setup() without loading the plugin, one ERROR
--- notification between them; on a supported version the commands and the
--- exit hook are defined.
+-- Below Neovim 0.10 the plugin file defines no command, the module answers
+-- a config's setup() without loading the plugin (one ERROR notification
+-- between them) and the modules the plugin-author API loads refuse at load;
+-- on a supported version the commands and the exit hook are defined.
 --
 -- Run: nvim --headless -u NONE -l tests/floor_guard_test.lua
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
@@ -28,6 +28,13 @@ end
 H.section("Section 1: below the floor")
 vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
 H.eq(vim.fn.exists(":LiveServerStart"), 0, "no command is defined below the floor")
+-- lazy.nvim sources plugin files with :source, where an ERROR notification
+-- on 0.9 raised a Vim(source) exception, so the refusal waits for the source
+-- to return and shows once the loop turns.
+H.eq(#notices, 0, "the plugin file's refusal waits until the :source returns")
+vim.wait(1000, function()
+    return #notices > 0
+end)
 H.eq(#notices, 1, "the plugin file refuses with one notification")
 -- lazy.nvim's config calls setup() whatever the plugin file did.
 package.loaded["live_server"] = nil
@@ -37,6 +44,12 @@ end)
 H.ok(setup_ok, "setup() raises nothing below the floor" .. (setup_ok and "" or (": " .. tostring(setup_err))))
 H.eq(package.loaded["live_server.server"], nil, "the module returns before the server module, and vim.uv, load")
 H.eq(#notices, 2, "the module refuses with one notification too")
+-- lualine's documented component calls statusline(), and a nil there
+-- rendered as the word nil.
+local status_ok, status = pcall(function()
+    return require("live_server").statusline()
+end)
+H.eq(status_ok and status or ("raised " .. tostring(status)), "", "the stub's statusline is empty")
 -- notify_once shows a text once, so one text between the two refusals is
 -- one notification on screen, whichever of them runs first.
 local texts, all_errors = {}, #notices > 0
@@ -47,14 +60,32 @@ end
 H.eq(vim.tbl_count(texts), 1, "the two refusals are one text, so the user sees one notification")
 H.ok(notices[1] ~= nil and notices[1].msg:find("0.10", 1, true) ~= nil, "the notification names the floor")
 H.ok(all_errors, "every refusal is an ERROR")
+-- The plugin-author API loads these two directly, so each refuses at load
+-- with the same text instead of failing later at vim.uv.
+for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
+    local loaded, err = pcall(require, modname)
+    H.eq(
+        loaded and "loaded" or tostring(err),
+        "live-server.nvim requires Neovim 0.10 or newer",
+        modname .. " refuses to load with the plugin's text"
+    )
+end
 
 H.section("Section 2: at the floor")
 vim.fn.has = real_has
 vim.notify_once = real_once
-package.loaded["live_server"] = nil
+-- A module that raised while loading leaves require's sentinel behind.
+for _, modname in ipairs({ "live_server", "live_server.server", "live_server.util" }) do
+    package.loaded[modname] = nil
+end
 vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
 vim.cmd("source " .. vim.fn.fnameescape(plugin_file))
-H.ok(package.loaded["live_server.server"] ~= nil, "the plugin's own module loads on a supported Neovim")
+-- By type: a failed require leaves a truthy sentinel, and a left-over stub
+-- answers state with a function.
+H.ok(
+    type(package.loaded["live_server.server"]) == "table" and type(require("live_server").state) == "table",
+    "the plugin's own modules load on a supported Neovim"
+)
 H.eq(vim.fn.exists(":LiveServerStart"), 2, "the commands are defined on a supported Neovim")
 H.eq(vim.fn.exists(":LiveServerStopAll"), 2, "every command is defined")
 local hooked, hooks = pcall(vim.api.nvim_get_autocmds, { group = "live_server", event = "VimLeavePre" })

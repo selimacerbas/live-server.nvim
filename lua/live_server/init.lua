@@ -1,12 +1,16 @@
 -- A config calls setup() whatever the plugin file did (lazy.nvim's config
 -- runs it), so below the floor the module is a stub that answers every call
--- with nothing and never loads the code that needs vim.uv. The text is the
--- plugin file's, so notify_once shows it once.
+-- with an empty string and never loads the code that needs vim.uv: a
+-- statusline component (lualine's, as the README shows) renders nil as the
+-- word. The text is the plugin file's, so notify_once shows it once.
 if vim.fn.has("nvim-0.10") == 0 then
     vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
-    return setmetatable({}, {
+    local function nothing()
+        return ""
+    end
+    return setmetatable({ statusline = nothing }, {
         __index = function()
-            return function() end
+            return nothing
         end,
     })
 end

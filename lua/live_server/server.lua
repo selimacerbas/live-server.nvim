@@ -1,3 +1,10 @@
+-- The plugin-author API loads this module directly, past both guards that
+-- notify: below the floor it refuses at load with the plugin's text (level 0
+-- leaves the position out) rather than at the first use of vim.uv.
+if vim.fn.has("nvim-0.10") == 0 then
+    error("live-server.nvim requires Neovim 0.10 or newer", 0)
+end
+
 local uv = vim.uv
 local util = require("live_server.util")
 

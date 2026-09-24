@@ -1,7 +1,11 @@
 -- live-server.nvim needs Neovim 0.10: vim.uv (the test runner needs it too).
--- Refusing here spares an older Neovim a stack trace at first use.
+-- Refusing here spares an older Neovim a stack trace at first use. The
+-- notification waits for the source to return: lazy.nvim sources this file
+-- with :source, where an ERROR notification on 0.9 raised Vim(source).
 if vim.fn.has("nvim-0.10") == 0 then
-    vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+    vim.schedule(function()
+        vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+    end)
     return
 end
 
