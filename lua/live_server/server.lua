@@ -228,7 +228,7 @@ local function scan_dirs(root)
 end
 
 -- UV_FS_EVENT_RECURSIVE is only supported on macOS and Windows.
--- On Linux (inotify) the flag is silently ignored — it does NOT error,
+-- On Linux (inotify) the flag is silently ignored: it does NOT error,
 -- it just watches only the given directory. We detect this via uv.os_uname().
 local function supports_recursive_watch()
     local info = uv.os_uname()

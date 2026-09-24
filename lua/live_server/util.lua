@@ -175,7 +175,7 @@ function U.pick_path(cb)
         if git_root then table.insert(menu, { "🪵 Git root", "__GIT_ROOT__" }) end
 
         pickers.new({}, {
-            prompt_title = "LiveServer — Choose path",
+            prompt_title = "LiveServer: Choose path",
             finder = finders.new_table({
                 results = menu,
                 entry_maker = function(e) return { value = e[2], display = e[1], ordinal = e[1] } end,
@@ -188,7 +188,7 @@ function U.pick_path(cb)
                     local tag = entry and entry.value
                     if tag == "__PICK_FILE__" then
                         require("telescope.builtin").find_files({
-                            prompt_title = "LiveServer — Pick file",
+                            prompt_title = "LiveServer: Pick file",
                             cwd = cwd,
                             attach_mappings = function(pb)
                                 actions.select_default:replace(function()
@@ -220,7 +220,7 @@ function U.pick_path(cb)
     else
         -- Fallback: simple UI
         vim.ui.select({ "Pick file", "Pick directory", "Current file", "Current directory" },
-            { prompt = "LiveServer — Choose path" }, function(choice)
+            { prompt = "LiveServer: Choose path" }, function(choice)
             if choice == "Pick file" then
                 vim.ui.input({ prompt = "File path: " }, cb)
             elseif choice == "Pick directory" then
