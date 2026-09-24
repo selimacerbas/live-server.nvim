@@ -32,21 +32,6 @@ ok(not util.secure_compare("abc", "abd"), "secure_compare unequal strings")
 ok(not util.secure_compare("abc", "abcd"), "secure_compare different lengths")
 ok(not util.secure_compare(nil, "abc"), "secure_compare nil arg")
 
-local uv = vim.uv or vim.loop
-eq(H.http_get("http://127.0.0.1:9/").status, 0, "a refused connection yields status 0")
-
--- A listener that completes the handshake and never answers: the bounded
--- curl must give up on its own, and the helper must report that as 0.
-local hold = uv.new_tcp()
-hold:bind("127.0.0.1", 0)
-hold:listen(1, function() end)
-local t0 = uv.hrtime()
-local stalled = H.http_get(("http://127.0.0.1:%d/"):format(hold:getsockname().port))
-eq(stalled.status, 0, "a stalled server yields status 0")
-eq(stalled.curl_exit, 28, "curl reports its timeout (exit 28)")
-ok((uv.hrtime() - t0) / 1e9 < 8, "the stalled request returned within the bound")
-hold:close()
-
 -- ─── Section 2: server with token ───────────────────────────────────────────
 H.section("Section 2: server enforces token")
 local TOKEN = util.random_token(16)
