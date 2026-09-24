@@ -663,6 +663,7 @@ eq(
     "an existing path is the name the filesystem gives it"
 )
 eq(H.canon(p .. "/phys/"), canon_p .. "/phys", "a trailing slash names the same directory")
+eq(H.canon(p .. "/nope/"), canon_p .. "/nope", "a trailing slash after a missing name leaves none")
 eq(
     H.canon(p .. "/nope/deeper"),
     canon_p .. "/nope/deeper",
@@ -672,6 +673,20 @@ eq(
 eq(H.canon(p .. "/nope/./deeper"), canon_p .. "/nope/deeper", "a . in a missing tail names no directory")
 -- The root is the one existing ancestor that ends in a separator.
 eq(H.canon("/nope-canon-xyz/a"), H.canon("/") .. "nope-canon-xyz/a", "a missing name under the root gets one separator")
+eq(H.canon("/nope-canon-xyz/../.."), H.canon("/"), "a .. at the root stays at the root")
+-- A name under a file is missing (ENOTDIR), not an error: the walk goes on
+-- through the file's own name, a .. after it included.
+local plain = p .. "/plain"
+H.write_file(plain, "")
+local function canon_or_raise(path)
+    local done, got = pcall(H.canon, path)
+    return done and got or ("raised " .. tostring(got))
+end
+eq(
+    canon_or_raise(plain .. "/x") .. " " .. canon_or_raise(plain .. "/x/../y"),
+    canon_p .. "/plain/x " .. canon_p .. "/plain/y",
+    "a name under a file resolves through the file's name"
+)
 eq(H.canon("~/nope-canon-xyz"), H.canon(vim.fn.expand("~")) .. "/nope-canon-xyz", "a leading ~ is the home directory")
 -- normalize expands $VAR unless told not to, and a $ in a directory's name
 -- is a character: a message names the directory that exists
@@ -768,7 +783,8 @@ eq(
 -- A symlink loop names a file that exists and cannot be resolved, so the
 -- helper raises with the errno instead of answering with the spelling.
 local loop_a, loop_b = p .. "/links/loop-a", p .. "/links/loop-b"
-if uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b) then
+local looped = uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b)
+if looped then
     local canon_ok, canon_err = pcall(H.canon, loop_a)
     ok(not canon_ok and tostring(canon_err):find("ELOOP", 1, true) ~= nil, "H.canon raises ELOOP on a symlink loop")
     -- Past a missing name, the loop is met by the walk over the tail.
@@ -788,11 +804,12 @@ else
     H.skip("H.same_path raises ELOOP through H.canon on a symlink loop (no symlink here)")
 end
 -- The raise names the suite's own line: the one inside call, found by the
--- file and the line range debug.getinfo gives for it.
-local function blames_caller(call)
+-- file and the line range debug.getinfo gives for it. what is the pattern
+-- the message carries after the line, a refused name unless given.
+local function blames_caller(call, what)
     local done, err = pcall(call)
     local where = debug.getinfo(call, "S")
-    local src, line = tostring(err):match("^(.-):(%d+): H%.[%w_]+: a path is a non%-empty string")
+    local src, line = tostring(err):match("^(.-):(%d+): " .. (what or "H%.[%w_]+: a path is a non%-empty string"))
     line = tonumber(line)
     return not done
         and src == where.short_src
@@ -824,5 +841,16 @@ ok(
     end),
     "H.same_path refuses an empty second name at the suite's line"
 )
+-- The walk over a missing tail raises at the same level as the walk up.
+if looped then
+    ok(
+        blames_caller(function()
+            H.canon(p .. "/missing/../links/loop-a")
+        end, "H%.canon: ELOOP"),
+        "an ELOOP reached past a missing name names the suite's line"
+    )
+else
+    H.skip("an ELOOP reached past a missing name names the suite's line (no symlink here)")
+end
 
 H.finish()
