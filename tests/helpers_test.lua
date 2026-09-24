@@ -21,14 +21,18 @@ for _, kind in ipairs({ "cache", "data", "state" }) do
 end
 
 H.section("Section 2: bounded curl")
--- A port the kernel just handed out and took back: almost always refused; if
--- another listener took the port meanwhile the bounded curl still returns 0 or
--- a real status, and the assertion reads status 0 only.
+-- A port the kernel just handed out and took back is refused, and refused is
+-- curl 7, where a socket left bound and silent reads 28 with the same status
+-- 0; the connect bound sits above Windows's retry of a refused loopback
+-- connect so that the Windows job reads 7 here too. A listener that takes
+-- the port in the moment between the close and the connect reads red.
 local probe = uv.new_tcp()
 probe:bind("127.0.0.1", 0)
 local released_port = probe:getsockname().port
 probe:close()
-eq(H.http_get(("http://127.0.0.1:%d/"):format(released_port)).status, 0, "a refused connection yields status 0")
+local refused = H.http_get(("http://127.0.0.1:%d/"):format(released_port))
+eq(refused.status, 0, "a refused connection yields status 0")
+eq(refused.curl_exit, 7, "curl reports the refused connection (exit 7)")
 
 -- A listener that completes the handshake and never answers: the bounded
 -- curl must give up on its own, and the helper must report that as 0.
@@ -120,6 +124,8 @@ H.section("Section 3: the exit code is the ruling")
 -- pattern) only its own path prints, and a child without it reports that
 -- instead of its code. The bound turns a child that hangs into a failed case
 -- instead of a stalled suite; vim.system reports that timeout as exit 124.
+-- A child killed by a signal reports code 0 (measured), so its exit is read
+-- through H.exit_code, 128 + the signal, as the helper reads curl's.
 -- opts.env adds to the child's environment, opts.helpers loads another copy
 -- of the helper, opts.prelude runs before the helper loads and opts.cwd is
 -- the child's working directory. The first hosted run's log reads as a
@@ -136,14 +142,15 @@ local function child_exit(body, expect, opts)
         { vim.v.progpath, "--headless", "-u", "NONE", "-l", path },
         { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }
     ):wait()
-    if r.code == 124 then
+    local code = H.exit_code(r)
+    if code == 124 then
         return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
     end
     local out = ((r.stdout or "") .. (r.stderr or "")):gsub("\r+\n", "\n")
     if not out:find(expect) then
-        return ("exit %d without %q"):format(r.code, expect)
+        return ("exit %d without %q"):format(code, expect)
     end
-    return r.code
+    return code
 end
 eq(child_exit('H.ok(false, "deliberate")\nH.finish()', "FAIL: deliberate"), 1, "a failed assertion exits 1")
 -- Through H.ok, so a broken H.eq cannot vouch for itself.
@@ -154,6 +161,28 @@ eq(
     0,
     "one passing assertion exits 0"
 )
+-- A child that wrote its expected line and then died by a signal must not
+-- read as the 0 vim.system reports for it. SIGKILL, since Neovim catches
+-- SIGTERM and exits 1 through its own handler (measured on 0.10.0 and
+-- 0.12.5).
+if vim.fn.has("win32") == 1 then
+    H.skip("a child killed by SIGKILL after its expected line reads 137 (no POSIX signal on Windows)")
+else
+    eq(
+        child_exit(
+            [[
+H.ok(true, "x")
+H.finish()
+io.stdout:write("written before the kill\n")
+io.stdout:flush()
+local uv = vim.uv or vim.loop
+uv.kill(uv.os_getpid(), "sigkill")]],
+            "written before the kill"
+        ),
+        137,
+        "a child killed by SIGKILL after its expected line reads 137"
+    )
+end
 eq(
     child_exit('H.ok(true, "x")\nH.skip("y")\nH.finish()', "Results: 1 passed, 0 failed, 1 skipped"),
     0,
@@ -497,26 +526,22 @@ H.section("Section 6: H.rtp proves the checkout is the copy require loads")
 -- the packpath answers instead (measured). markdown-preview runs this file
 -- against its own H.rtp, which proves its own entry file first, so both
 -- trees carry both plugins' entry files and the message is matched up to lua/.
+-- The child's H.rtp() sits on its line 2, which a refusal names.
 local base = H.tmpdir()
+local rtp_cases = {
+    "a checkout whose path the runtimepath splits raises at the suite's line, naming the installed copy",
+    "a checkout whose path holds a brace group raises the search's own error at the suite's line",
+    "a checkout reached through a plain-named link to a path with a comma loads",
+}
 if base:find("[,$*?%[%]{}]") then
-    H.skip(
-        "a checkout whose path the runtimepath splits raises (the temp path "
-            .. base
-            .. " carries a comma, a dollar sign or a glob character)"
-    )
+    for _, msg in ipairs(rtp_cases) do
+        H.skip(msg .. " (the temp path " .. base .. " carries a comma, a dollar sign or a glob character)")
+    end
 else
-    local root = base .. "/a,b/checkout"
-    vim.fn.mkdir(root .. "/tests", "p")
-    assert(uv.fs_copyfile(helpers_path, root .. "/tests/helpers.lua"))
-    -- The start package goes where the child's packpath looks: stdpath()
-    -- reads the variable at call time and follows NVIM_APPNAME (nvim-data on
-    -- Windows).
-    local data = base .. "/data"
-    local saved_data = vim.env.XDG_DATA_HOME
-    vim.env.XDG_DATA_HOME = data
-    local installed = vim.fn.stdpath("data") .. "/site/pack/x/start/live-server"
-    vim.env.XDG_DATA_HOME = saved_data
-    for _, dir in ipairs({ root, installed }) do
+    -- A checkout under dir: a copy of the helper and both plugins' modules.
+    local function checkout(dir)
+        vim.fn.mkdir(dir .. "/tests", "p")
+        assert(uv.fs_copyfile(helpers_path, dir .. "/tests/helpers.lua"))
         for _, rel in ipairs({
             "lua/live_server/server.lua",
             "lua/live_server/util.lua",
@@ -526,15 +551,66 @@ else
             H.write_file(dir .. "/" .. rel, "return {}\n")
         end
     end
+    local root = base .. "/a,b/checkout"
+    checkout(root)
+    -- The start package goes where the child's packpath looks: stdpath()
+    -- reads the variable at call time and follows NVIM_APPNAME (nvim-data on
+    -- Windows).
+    local data = base .. "/data"
+    local saved_data = vim.env.XDG_DATA_HOME
+    vim.env.XDG_DATA_HOME = data
+    local installed = vim.fn.stdpath("data") .. "/site/pack/x/start/live-server"
+    vim.env.XDG_DATA_HOME = saved_data
+    checkout(installed)
     eq(
         child_exit(
             "H.rtp()",
-            vim.pesc(("the checkout at %s does not resolve: %s/lua/"):format(H.canon(root), H.canon(installed))),
+            "child_test%.lua:2: "
+                .. vim.pesc(("the checkout at %s does not resolve: %s/lua/"):format(H.canon(root), H.canon(installed))),
             { helpers = root .. "/tests/helpers.lua", env = { XDG_DATA_HOME = data } }
         ),
         1,
-        "a checkout whose path the runtimepath splits raises, naming the installed copy"
+        rtp_cases[1]
     )
+    -- A brace group with a comma makes building the search path raise E220
+    -- (measured), which the refusal names in place of a raw traceback.
+    local braced = base .. "/d{a,b}/checkout"
+    checkout(braced)
+    eq(
+        child_exit(
+            "H.rtp()",
+            "child_test%.lua:2: "
+                .. vim.pesc(("the checkout at %s does not resolve: the runtimepath raised "):format(H.canon(braced)))
+                .. "[^\n]*E220",
+            { helpers = braced .. "/tests/helpers.lua" }
+        ),
+        1,
+        rtp_cases[2]
+    )
+    -- The runtimepath gets the checkout by the name the helper was loaded
+    -- through, so a link without a comma loads where the physical name would
+    -- be split; markdown-preview's H.rtp finds live-server through
+    -- LIVE_SERVER_RTP here, a directory with a plain name.
+    local plain_ls = base .. "/plain-ls"
+    vim.fn.mkdir(plain_ls .. "/lua/live_server", "p")
+    H.write_file(plain_ls .. "/lua/live_server/server.lua", "return {}\n")
+    H.write_file(plain_ls .. "/lua/live_server/util.lua", "return {}\n")
+    local link = base .. "/plain-checkout"
+    local linked, link_err = uv.fs_symlink(root, link, { dir = true })
+    if linked and uv.fs_stat(link .. "/tests/helpers.lua") then
+        eq(
+            child_exit('H.rtp()\nH.ok(true, "loaded")\nH.finish()', "Results: 1 passed, 0 failed, 0 skipped", {
+                helpers = link .. "/tests/helpers.lua",
+                env = { XDG_DATA_HOME = data, LIVE_SERVER_RTP = plain_ls },
+            }),
+            0,
+            rtp_cases[3]
+        )
+    else
+        H.skip(
+            rtp_cases[3] .. " (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")"
+        )
+    end
 end
 
 H.section("Section 7: one spelling per path")
@@ -620,12 +696,36 @@ ok(
 ok(H.same_path(p, canon_p), "a raw tempname and its canonical form are the same path")
 ok(not H.same_path(p .. "/phys", p .. "/links"), "two directories are two paths")
 -- A missing name has no on-disk case for realpath to give, so only the fold
--- makes two spellings of it one path, and only where the file system folds.
+-- makes two spellings of it one path, and only where the filesystem folds:
+-- the helper's measurement is checked against one taken here, and the
+-- answer must hold once one of the names is made (on macOS's APFS it flipped
+-- from false to true while the fold followed the platform).
+vim.fn.mkdir(p .. "/case/probe", "p")
+local folds = uv.fs_stat(p .. "/case/PROBE") ~= nil
+eq(H.fs_folds_case, folds, "the helper's case-fold measurement matches this filesystem")
+local missing_same = H.same_path(p .. "/nope-case", p .. "/NOPE-CASE")
+eq(missing_same, folds, "two cases of a missing name are one path where the filesystem folds")
+vim.fn.mkdir(p .. "/nope-case", "p")
 eq(
-    H.same_path(p .. "/nope", p .. "/NOPE"),
-    vim.fn.has("win32") == 1,
-    "two cases of a missing name are one path on Windows only"
+    H.same_path(p .. "/nope-case", p .. "/NOPE-CASE"),
+    missing_same,
+    "making one of the two names leaves the answer where it was"
 )
+-- A symlink loop names a file that exists and cannot be resolved, so the
+-- helper raises with the errno instead of answering with the spelling.
+local loop_a, loop_b = p .. "/links/loop-a", p .. "/links/loop-b"
+if uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b) then
+    local canon_ok, canon_err = pcall(H.canon, loop_a)
+    ok(not canon_ok and tostring(canon_err):find("ELOOP", 1, true) ~= nil, "H.canon raises ELOOP on a symlink loop")
+    local same_ok, same_err = pcall(H.same_path, p, loop_a)
+    ok(
+        not same_ok and tostring(same_err):find("ELOOP", 1, true) ~= nil,
+        "H.same_path raises ELOOP through H.canon on a symlink loop"
+    )
+else
+    H.skip("H.canon raises ELOOP on a symlink loop (no symlink here)")
+    H.skip("H.same_path raises ELOOP through H.canon on a symlink loop (no symlink here)")
+end
 -- The raise names the suite's own line: the one inside call, found by the
 -- file and the line range debug.getinfo gives for it.
 local function blames_caller(call)
