@@ -87,8 +87,8 @@ end
 -- message, so every ledger call samples it. The :messages history cannot stand
 -- in: every print() enters it and it keeps 500 lines on 0.12.5, 200 on 0.10.0,
 -- so a long suite evicts an early error (measured). Any error message fails
--- the suite, an error notification too, so a suite that provokes one on
--- purpose clears vim.v.errmsg before its next assertion.
+-- the suite, an error notification too; a suite that provokes one on purpose
+-- goes through H.expect_error, which consumes only the message it expects.
 local function sample_errmsg()
     if vim.v.errmsg ~= "" then
         table.insert(errors, vim.v.errmsg)
@@ -110,6 +110,20 @@ function H.errors()
     vim.wait(10, function() return false end)
     sample_errmsg()
     return vim.list_extend({}, errors)
+end
+
+-- Runs fn, which should report an error message containing pattern (plain
+-- text), and consumes that one message. Errors already pending are drained
+-- into the ledger first, so a callback error from the same window still fails
+-- the suite; a message that does not match stays for the ledger too.
+function H.expect_error(pattern, fn)
+    H.errors()
+    fn()
+    if vim.v.errmsg ~= "" and vim.v.errmsg:find(pattern, 1, true) then
+        vim.v.errmsg = ""
+        return true
+    end
+    return false
 end
 
 -- An assertion after the ruling would never reach the exit code.
@@ -176,23 +190,46 @@ function H.finish()
 end
 
 -- A suite that returns early or never calls H.finish() would exit 0 whatever
--- it asserted; cq inside VimLeavePre sets the exit code under -l (measured on
--- 0.10.0 and 0.12.5). After a passing ruling, an error a callback raised on
--- the way out still fails the run.
+-- it asserted, and after a passing ruling an error a callback raised on the
+-- way out still fails the run. Returns true, with the reason printed, when the
+-- run must exit 1. Each message ends in its own newline because cq and
+-- os.exit skip the one a normal exit writes, which glued the next line of
+-- output (a CI ::endgroup:: marker) onto it (measured).
+local function exit_must_fail()
+    if not verdict then
+        print("suite ended without H.finish()\n")
+        return true
+    end
+    if verdict == "pass" then
+        local late = H.errors()
+        if #late > 0 then
+            print("error reported after H.finish(): " .. headline(late[#late]) .. "\n")
+            return true
+        end
+    end
+    return false
+end
+
+-- cq inside VimLeavePre sets the exit code under -l (measured on 0.10.0 and
+-- 0.12.5).
 vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("tests_helpers_finish", { clear = true }),
     callback = function()
-        if not verdict then
-            print("suite ended without H.finish()")
+        if exit_must_fail() then
             vim.cmd("cq 1")
-        elseif verdict == "pass" then
-            local late = H.errors()
-            if #late > 0 then
-                print("error reported after H.finish(): " .. headline(late[#late]))
-                vim.cmd("cq 1")
-            end
         end
     end,
 })
+
+-- os.exit leaves without VimLeavePre, so a suite that called it after a
+-- failed assertion exited 0 with no ruling (measured); it takes the same
+-- ruling on the way out.
+local real_exit = os.exit
+os.exit = function(code, ...)
+    if exit_must_fail() then
+        return real_exit(1, ...)
+    end
+    return real_exit(code, ...)
+end
 
 return H
