@@ -421,31 +421,44 @@ local function exit_now(code, ...)
     return real_exit(code, ...)
 end
 
--- A line on a line of its own, straight to stdout, for an exit ruling's
--- reason and for every line a parent process reads back: print ends a line
--- only when the next message begins, so text written after it lands on its
--- line (0.10.0 and 0.12.5), and cq and os.exit skip the newline a normal exit
--- writes, which glued the next line of output (a CI ::endgroup:: marker)
--- onto it; on 0.12.5 a print line that fills a multiple of 80 columns loses
--- its newline to the next one, so the width of a path decided whether two
--- lines stayed two; print on 0.10.0 ends a line in \r\n and cut a long
--- message short under textlock (all measured). Hence a newline on both sides.
+-- Every line the helper writes goes here, straight to stdout with its own
+-- newline, never through print: print writes to stderr under -l and ends a
+-- line only when the next message begins, so text written after it landed
+-- on its line (0.10.0 and 0.12.5); cq and os.exit skip the newline a normal
+-- exit writes, which glued the next line of output (a CI ::endgroup::
+-- marker) onto it; on 0.12.5 a message that fills a multiple of 80 columns
+-- loses its newline to the next one, so the width of a message or a temp
+-- path decided whether a ledger line began a line; print on 0.10.0 ends a
+-- line in \r\n and cut a long message short under textlock (all measured).
+-- A message a suite caused may still hold its line open on stderr, which the
+-- runner merges into one stream: an empty echo ends that line and writes
+-- nothing when none is open (measured on both), so consecutive ledger lines
+-- take no empty line between them. It cannot see an open message of exactly
+-- 80 columns on 0.12.5, and a fast event may not echo. The flush stops a C
+-- library that buffers a piped stdout from moving these lines behind stderr.
 function H.write_line(line)
-    io.stdout:write("\n" .. line .. "\n")
+    if not vim.in_fast_event() then
+        pcall(vim.api.nvim_echo, { { "" } }, false, {})
+    end
+    io.stdout:write(line .. "\n")
+    io.stdout:flush()
 end
 
 function H.section(title)
-    print(((passed + failed + skipped) > 0 and "\n" or "") .. title)
+    if passed + failed + skipped > 0 then
+        H.write_line("")
+    end
+    H.write_line(title)
 end
 
 function H.ok(cond, msg)
     open_ledger("H.ok")
     if cond then
         passed = passed + 1
-        print("  PASS: " .. msg)
+        H.write_line("  PASS: " .. msg)
     else
         failed = failed + 1
-        print("  FAIL: " .. msg)
+        H.write_line("  FAIL: " .. msg)
     end
 end
 
@@ -453,24 +466,24 @@ function H.eq(a, b, msg)
     open_ledger("H.eq")
     if a == b then
         passed = passed + 1
-        print("  PASS: " .. msg)
+        H.write_line("  PASS: " .. msg)
     else
         failed = failed + 1
-        print(string.format("  FAIL: %s (got %s, want %s)", msg, tostring(a), tostring(b)))
+        H.write_line(string.format("  FAIL: %s (got %s, want %s)", msg, tostring(a), tostring(b)))
     end
 end
 
--- A skip drops an assertion, so it is counted and printed, never silent.
+-- A skip drops an assertion, so it is counted and written, never silent.
 function H.skip(msg)
     open_ledger("H.skip")
     skipped = skipped + 1
-    print("  SKIP: " .. msg)
+    H.write_line("  SKIP: " .. msg)
 end
 
 -- The exit code is the ruling every gate reads; the summary is for the reader.
 -- A suite that asserted nothing proved nothing, so it fails as well, and so
--- does one whose callbacks raised. The last banner line carries its own
--- newline because cq skips the one a normal exit writes (measured on 0.12.5).
+-- does one whose callbacks raised. The Results line a runner greps for
+-- follows the banner, a line of the helper's own, so it always starts a line.
 -- cq ends the run through Neovim's own teardown; where Ex commands are refused
 -- (textlock, an expr mapping: E565) it raised and the run went on to exit 0
 -- (measured), so a cq that raises or returns falls through to the real exit.
@@ -479,14 +492,15 @@ function H.finish()
     finishing = true
     for _, e in ipairs(H.errors()) do
         failed = failed + 1
-        print("  FAIL: error reported: " .. headline(e))
+        H.write_line("  FAIL: error reported: " .. headline(e))
     end
     if passed + failed == 0 then
-        print("No assertion ran: a suite that checks nothing is not a pass.")
+        H.write_line("No assertion ran: a suite that checks nothing is not a pass.")
     end
-    print("\n========================================")
-    print(string.format("Results: %d passed, %d failed, %d skipped", passed, failed, skipped))
-    print("========================================\n")
+    H.write_line("")
+    H.write_line("========================================")
+    H.write_line(string.format("Results: %d passed, %d failed, %d skipped", passed, failed, skipped))
+    H.write_line("========================================")
     verdict = (failed > 0 or passed == 0) and "fail" or "pass"
     if verdict == "fail" then
         local ok, err = pcall(vim.cmd, "cq 1")

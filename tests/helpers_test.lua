@@ -130,28 +130,34 @@ H.section("Section 3: the exit code is the ruling")
 -- A child killed by a signal reports code 0 (measured), so its exit is read
 -- through H.exit_code, 128 + the signal, as the helper reads curl's.
 -- opts.env adds to the child's environment, opts.helpers loads another copy
--- of the helper, opts.prelude runs before the helper loads and opts.cwd is
--- the child's working directory. The first hosted run's log reads as a
--- Windows child ending its lines in \r\n, which a pattern naming \n misses
--- (the next Windows run is the measurement), so the output is read with
--- every line end folded to \n, once, here.
+-- of the helper, opts.prelude runs before the helper loads, opts.cwd is the
+-- child's working directory and opts.merged joins the child's stderr to its
+-- stdout at the descriptor through POSIX sh, as tests/run.sh's 2>&1 does
+-- (otherwise stdout is read before stderr). The first hosted run's log reads
+-- as a Windows child ending its lines in \r\n, which a pattern naming \n
+-- misses (the next Windows run is the measurement), so the output is read
+-- with every line end folded to \n, once, here. A case that fails names the
+-- pattern it missed on one line (vim.inspect escapes the newline %q would
+-- write), so a Results line inside a pattern never starts a line of this
+-- suite's own log, where the runner counts them.
 local helpers_path = vim.fs.joinpath(H.root, "tests", "helpers.lua")
 local CHILD_TIMEOUT_MS = 30000
 local function child_exit(body, expect, opts)
     opts = opts or {}
     local path = vim.fs.joinpath(H.tmpdir(), "child_test.lua")
     H.write_file(path, ("%slocal H = dofile(%q)\n%s\n"):format(opts.prelude or "", opts.helpers or helpers_path, body))
-    local r = vim.system(
-        { vim.v.progpath, "--headless", "-u", "NONE", "-l", path },
-        { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }
-    ):wait()
+    local cmd = { vim.v.progpath, "--headless", "-u", "NONE", "-l", path }
+    if opts.merged then
+        cmd = { "sh", "-c", 'exec "$0" "$@" 2>&1', unpack(cmd) }
+    end
+    local r = vim.system(cmd, { env = opts.env, cwd = opts.cwd, timeout = CHILD_TIMEOUT_MS }):wait()
     local code = H.exit_code(r)
     if code == 124 then
         return ("killed after %d ms"):format(CHILD_TIMEOUT_MS)
     end
     local out = ((r.stdout or "") .. (r.stderr or "")):gsub("\r+\n", "\n")
     if not out:find(expect) then
-        return ("exit %d without %q"):format(code, expect)
+        return ("exit %d without %s"):format(code, vim.inspect(expect))
     end
     return code
 end
@@ -277,6 +283,34 @@ eq(
     0,
     "a line of exactly 80 columns and the next one stay two lines"
 )
+-- The ledger's own lines go the same way: a PASS line of exactly 80 columns
+-- printed on 0.12.5 swallowed the next ledger line (measured), so the width
+-- of a message decided which lines a reader or a grep of the log found.
+eq(
+    child_exit(
+        ('H.ok(true, %q)\nH.ok(true, "second")\nH.finish()'):format(("w"):rep(72)),
+        "  PASS: " .. ("w"):rep(72) .. "\n  PASS: second\n.-\nResults: 2 passed, 0 failed, 0 skipped\n"
+    ),
+    0,
+    "a PASS line of exactly 80 columns leaves the next line and the Results line at column zero"
+)
+-- A message the suite caused holds its line open on stderr until the next
+-- message begins, and the runner merges stderr into stdout, so the next
+-- ledger line ends that line first: without it the two shared one line
+-- (measured).
+if vim.fn.has("win32") == 1 then
+    H.skip("a ledger line after the suite's own message starts a line (no POSIX sh on Windows)")
+else
+    eq(
+        child_exit(
+            'print("a message the suite caused")\nH.ok(true, "after the message")\nH.finish()',
+            "a message the suite caused\n  PASS: after the message\n",
+            { merged = true }
+        ),
+        0,
+        "a ledger line after the suite's own message starts a line"
+    )
+end
 -- A quit a callback still holds when the main chunk ends runs during Neovim's
 -- teardown, after the ruling, and set the exit code again (measured).
 eq(
