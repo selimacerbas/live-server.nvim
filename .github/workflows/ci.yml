@@ -4,20 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
-  schedule:
-    # Weekly: catches Neovim nightly drift. In a public repository GitHub disables
-    # the whole workflow after 60 days without a commit; re-enable it from the
-    # Actions tab (or gh workflow enable ci) when that happens.
-    - cron: "17 5 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  # A PR's superseded run is cancelled; a push, the schedule and a manual run
-  # each get their own group, so no verdict on main is ever cancelled or
-  # replaced (GitHub replaces a pending run in a shared group even with
+  # A PR's superseded run is cancelled; a push and a manual run each get
+  # their own group, so no verdict on main is ever cancelled or replaced
+  # (GitHub replaces a pending run in a shared group even with
   # cancel-in-progress false).
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -67,42 +62,15 @@ jobs:
       - name: Headless tests
         run: bash tests/run.sh
 
-  # Drift detection reports, it does not gate a merge: an upstream nightly
-  # break is not this plugin's regression. The weekly cron is its reason to
-  # exist, so it stays outside ci-ok. It runs on the cron and by hand only, so a
-  # PR never shows an upstream nightly break.
-  nightly:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    name: nightly (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
-        with:
-          neovim: true
-          version: nightly
-      - name: Version
-        run: nvim --version | head -n 3
-      - name: Headless tests
-        run: bash tests/run.sh
-
-  # Measures that the suites run on Windows at all; the token fallback (no
-  # /dev/urandom) and NTFS case folding get their own assertions in the
-  # security arc. It reports and joins ci-ok once it has been green
-  # (Follow-on F-01).
+  # Measures the suites on Windows; the token fallback (no /dev/urandom) has
+  # no assertion of its own yet. It reports, and joins ci-ok once it has been
+  # green.
   windows:
     name: windows (nvim stable)
     runs-on: windows-latest
     timeout-minutes: 15
-    # The run's conclusion follows the required check; this job is read from
-    # its own conclusion (a red one is a finding for F-01, never a merge block).
+    # On push and pull_request runs the conclusion follows ci-ok; a red here
+    # is read from this job's own conclusion and never blocks a merge.
     continue-on-error: true
     defaults:
       run:
@@ -124,14 +92,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Full history: make lint-blame checks that HEAD contains every commit
+      # .git-blame-ignore-revs names.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: actionlint
+        # Dependabot skips docker:// references (dependabot-core's
+        # github_actions file_parser returns early on them), so this digest
+        # is moved by hand.
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
         with:
           args: -color
+      - name: make lint-text
+        run: make lint-text
+      - name: make lint-blame
+        run: make lint-blame
 
+  # The Makefile holds the one StyLua pin; the job runs its target. An exact
+  # bun-version needs no GitHub API lookup, so no step here holds the job
+  # token.
   format:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -139,11 +120,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: JohnnyMorganz/stylua-action@76fd70c03e6340ceaf673366712db9b20560b402 # v5.0.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: 2.5.2
-          args: --check lua plugin tests
+          bun-version: 1.4.2
+          token: ""
+      - name: make fmt-check
+        run: make fmt-check
 
   # The one status check branch protection is meant to require (an operator
   # step later). Each gating job is named, so an empty or shortened needs list

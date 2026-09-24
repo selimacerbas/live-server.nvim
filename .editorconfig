@@ -13,3 +13,7 @@ indent_size = 4
 [*.{yml,yaml,json,md}]
 indent_style = space
 indent_size = 2
+
+# Two trailing spaces are a Markdown hard line break.
+[*.md]
+trim_trailing_whitespace = false
