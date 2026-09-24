@@ -668,6 +668,8 @@ eq(
     canon_p .. "/nope/deeper",
     "a missing name resolves through its deepest existing ancestor"
 )
+-- :p keeps a . in a missing tail (measured), so the walk must drop it.
+eq(H.canon(p .. "/nope/./deeper"), canon_p .. "/nope/deeper", "a . in a missing tail names no directory")
 -- The root is the one existing ancestor that ends in a separator.
 eq(H.canon("/nope-canon-xyz/a"), H.canon("/") .. "nope-canon-xyz/a", "a missing name under the root gets one separator")
 eq(H.canon("~/nope-canon-xyz"), H.canon(vim.fn.expand("~")) .. "/nope-canon-xyz", "a leading ~ is the home directory")
@@ -693,9 +695,9 @@ for _, name in ipairs({ p, p .. "/phys/../phys", p .. "/nope", p .. "/missing/..
 end
 eq(table.concat(unstable, ", "), "", "a second pass changes nothing")
 -- Windows makes a file link unless told dir. A .. after a link resolves from
--- the link's target on POSIX, as the filesystem reads it, also while a later
--- name is missing, so creating that name does not move the path; Win32
--- resolves .. by name before the filesystem sees it.
+-- the link's target on POSIX, as the filesystem reads it, also while a name
+-- before the link or after the .. is missing, so creating that name does not
+-- move the path; Win32 resolves .. by name before the filesystem sees it.
 local link = p .. "/links/t"
 local linked, link_err = uv.fs_symlink(p .. "/phys/t", link, { dir = true })
 local link_cases = {
@@ -706,6 +708,10 @@ local dotdot_cases = {
     "a .. after a directory symlink resolves from its target",
     "a .. after a directory symlink resolves from its target while a later name is missing",
     "creating the missing name leaves that path where it was",
+    "a .. out of a missing name, then a link and a .., reads as the kernel will",
+    "creating that missing name leaves the path where it was",
+    "the same with a missing name after the link's .. reads as the kernel will",
+    "creating the first missing name leaves that path where it was too",
 }
 if linked and uv.fs_stat(link) then
     eq(H.canon(link), canon_p .. "/phys/t", link_cases[1])
@@ -719,6 +725,17 @@ if linked and uv.fs_stat(link) then
         eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[2])
         vim.fn.mkdir(p .. "/phys/later", "p")
         eq(H.canon(link .. "/../later/leaf"), canon_p .. "/phys/later/leaf", dotdot_cases[3])
+        -- Fresh names: phys/later exists by now, and the second shape needs a
+        -- name after the link's .. that is still missing.
+        local climbs = { "/early/../links/t/../y", "/early/../links/t/../unmade/y" }
+        local before = { H.canon(p .. climbs[1]), H.canon(p .. climbs[2]) }
+        vim.fn.mkdir(p .. "/early", "p")
+        local kernel = uv.fs_realpath(p .. "/early/../links/t/..")
+        kernel = kernel and vim.fs.normalize(kernel, { expand_env = false }) or "(realpath failed)"
+        eq(before[1], kernel .. "/y", dotdot_cases[4])
+        eq(H.canon(p .. climbs[1]), kernel .. "/y", dotdot_cases[5])
+        eq(before[2], kernel .. "/unmade/y", dotdot_cases[6])
+        eq(H.canon(p .. climbs[2]), kernel .. "/unmade/y", dotdot_cases[7])
     end
 else
     local why = " (no directory symlink here: " .. tostring(link_err or "the link does not resolve") .. ")"
@@ -754,6 +771,12 @@ local loop_a, loop_b = p .. "/links/loop-a", p .. "/links/loop-b"
 if uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b) then
     local canon_ok, canon_err = pcall(H.canon, loop_a)
     ok(not canon_ok and tostring(canon_err):find("ELOOP", 1, true) ~= nil, "H.canon raises ELOOP on a symlink loop")
+    -- Past a missing name, the loop is met by the walk over the tail.
+    local climb_ok, climb_err = pcall(H.canon, p .. "/missing/../links/loop-a")
+    ok(
+        not climb_ok and tostring(climb_err):find("ELOOP", 1, true) ~= nil,
+        "H.canon raises ELOOP on a symlink loop reached past a missing name"
+    )
     local same_ok, same_err = pcall(H.same_path, p, loop_a)
     ok(
         not same_ok and tostring(same_err):find("ELOOP", 1, true) ~= nil,
@@ -761,6 +784,7 @@ if uv.fs_symlink(loop_b, loop_a) and uv.fs_symlink(loop_a, loop_b) then
     )
 else
     H.skip("H.canon raises ELOOP on a symlink loop (no symlink here)")
+    H.skip("H.canon raises ELOOP on a symlink loop reached past a missing name (no symlink here)")
     H.skip("H.same_path raises ELOOP through H.canon on a symlink loop (no symlink here)")
 end
 -- The raise names the suite's own line: the one inside call, found by the

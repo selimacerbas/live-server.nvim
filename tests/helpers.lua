@@ -44,52 +44,53 @@ local function require_path(fn, path)
     end
 end
 
+-- The name the filesystem gives a path, or nil for a name that is not there
+-- (ENOENT) or sits under a file (ENOTDIR). Any other error comes back as the
+-- second value: it names a file that exists and cannot be resolved (a
+-- symlink loop, a refused search), which H.canon raises at its caller's line
+-- rather than compare as some other file.
+local function realpath(name)
+    local real, err, kind = uv.fs_realpath(name)
+    if real then
+        return vim.fs.normalize(real, { expand_env = false })
+    end
+    if kind ~= "ENOENT" and kind ~= "ENOTDIR" then
+        return nil, err
+    end
+end
+
 -- One spelling per file, so a suite compares names by value and a message
 -- prints the name a test builds: absolute (:p, a leading ~ expanded), then
 -- the name the filesystem gives (it folds a symlink, /var against
 -- /private/var on macOS and an 8.3 short name such as RUNNER~1, which
 -- tempname() returns on Windows), with forward slashes, no trailing one and
--- a $ kept literal. realpath needs the path to exist, so a name not yet
--- created resolves through its deepest existing ancestor: it reads the same
--- before and after it is made (a dangling link reads as a missing name, so
--- making its target does move a path through it; where the filesystem folds
--- case, a missing name moves to the case it is made in, which H.same_path
--- folds away), and a second pass changes nothing. Only a name that is not
--- there (ENOENT) or sits under a file (ENOTDIR) walks up: any other realpath
--- error (a symlink loop, a refused search) names a file that exists and
--- cannot be resolved, so it raises rather than compare as some other file.
--- The walk runs on the :p form before any fold by name, so a .. after a
--- symlinked directory resolves through the filesystem as the kernel reads
--- it, also while a later name is missing; a .. or . left in the missing tail
--- folds by name, and the result is resolved once more in case the fold
--- landed on a link. The one shape that still moves once made is a missing
--- name followed by a link and a .. (missing/../link/../x): the fold by name
--- crosses the link before it exists to the filesystem walk. No suite builds
--- one; resolving the tail one component at a time would close it.
+-- a $ kept literal. The helper folds nothing by name, since a .. after a
+-- symlinked directory climbs from its target as the kernel reads it:
+-- realpath needs the path to exist, so the :p form resolves through its
+-- deepest existing ancestor, and the missing tail is walked one component
+-- at a time, a .. leaving the directory resolved so far, a . skipped and a
+-- name that exists going through realpath. So a path reads the same before
+-- and after a missing name in it is made, a .. that climbs out of one onto
+-- a link included, and a second pass changes nothing. A link is the
+-- exception: a dangling one reads as a missing name, so making its target,
+-- or making a missing name as a link, moves a path through it to the
+-- target. Where the filesystem folds case, a missing name moves to the case
+-- it is made in, which H.same_path folds away.
 function H.canon(path)
     require_path("H.canon", path)
     local full = vim.fn.fnamemodify(path, ":p")
     if is_win then
         full = full:gsub("\\", "/")
     end
-    local head, tail, folded = full, {}, false
+    local head, tail = full, {}
     while true do
-        local real, err, kind = uv.fs_realpath(head)
-        if not real and kind ~= "ENOENT" and kind ~= "ENOTDIR" then
+        local real, err = realpath(head)
+        if err then
             error("H.canon: " .. tostring(err), 2)
         end
         if real then
-            if #tail == 0 then
-                return vim.fs.normalize(real, { expand_env = false })
-            end
-            -- realpath ends in a separator only at a root, which must not
-            -- double into a UNC-looking //.
-            local sep = (real:sub(-1) == "/" or (is_win and real:sub(-1) == "\\")) and "" or "/"
-            local joined = vim.fs.normalize(real .. sep .. table.concat(tail, "/"), { expand_env = false })
-            if folded then
-                return H.canon(joined)
-            end
-            return joined
+            head = real
+            break
         end
         local parent = vim.fs.dirname(head)
         if parent == head then
@@ -98,10 +99,24 @@ function H.canon(path)
         local name = vim.fs.basename(head)
         if name ~= "" then
             table.insert(tail, 1, name)
-            folded = folded or name == "." or name == ".."
         end
         head = parent
     end
+    for _, name in ipairs(tail) do
+        if name == ".." then
+            head = vim.fs.dirname(head)
+        elseif name ~= "." then
+            -- Only a root ends in a separator, which must not double into a
+            -- UNC-looking //.
+            local joined = head .. (head:sub(-1) == "/" and "" or "/") .. name
+            local real, err = realpath(joined)
+            if err then
+                error("H.canon: " .. tostring(err), 2)
+            end
+            head = real or joined
+        end
+    end
+    return head
 end
 
 -- Whether two names denote one file. A missing name has no on-disk case for
