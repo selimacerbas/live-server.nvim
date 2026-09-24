@@ -43,29 +43,53 @@ function H.isolate()
     return root
 end
 
--- The runtimepath reads an entry at search time: a comma splits it, a $VAR
--- expands and a glob character matches, so the directory a suite prepends is
--- not always the one require searches, and a copy on the startup packpath
--- answers instead (measured). Only the file the search
--- resolves proves the entry. Returns nil when rel resolves under dir, else
--- what the search found in its place.
-local function resolved_elsewhere(dir, rel)
-    local hit = vim.api.nvim_get_runtime_file(rel, false)[1]
-    local want = vim.fs.normalize(dir .. "/" .. rel, { expand_env = false })
-    if hit and vim.fs.normalize(hit, { expand_env = false }) == want then
-        return nil
+-- The two files a module can be, in the order Neovim's loader tries them.
+local function module_forms(modname)
+    local rel = modname:gsub("%.", "/")
+    return { "/lua/" .. rel .. ".lua", "/lua/" .. rel .. "/init.lua" }
+end
+
+-- The file require would load for modname, found the way the loader finds
+-- it: runtimepath entries in order, and in each lua/<mod>.lua before
+-- lua/<mod>/init.lua, so a flat file in an earlier entry wins (measured).
+-- The entries are the search path Neovim built, after it split, expanded
+-- and globbed the option.
+local function first_hit(modname)
+    for _, entry in ipairs(vim.api.nvim_list_runtime_paths()) do
+        for _, form in ipairs(module_forms(modname)) do
+            if uv.fs_stat(entry .. form) then
+                return vim.fs.normalize(entry .. form, { expand_env = false })
+            end
+        end
     end
-    return tostring(hit)
+end
+
+-- The runtimepath reads an entry at search time: a comma splits it, a $VAR
+-- expands and a glob character matches, and an earlier entry answers first,
+-- so the directory a suite prepends is not always the one require loads from
+-- and a copy on the startup packpath answers instead (measured). Raises,
+-- naming what require would load, unless modname resolves to root's own file.
+local function prove_module(root, modname, label, reason)
+    local own
+    for _, form in ipairs(module_forms(modname)) do
+        if uv.fs_stat(root .. form) then
+            own = vim.fs.normalize(root .. form, { expand_env = false })
+            break
+        end
+    end
+    local hit = first_hit(modname)
+    if not own or hit ~= own then
+        error(("%s at %s does not resolve: %s (%s)"):format(label, root, tostring(hit), reason), 2)
+    end
 end
 
 -- The checkout goes first on the runtimepath and proves it is the copy
 -- require loads. markdown-preview carries this file verbatim except here: it
--- proves its own entry file and then finds live-server as a dependency.
+-- proves its own modules and then finds live-server as a dependency.
 function H.rtp()
     vim.opt.runtimepath:prepend(H.root)
-    local elsewhere = resolved_elsewhere(H.root, "lua/live_server/server.lua")
-    if elsewhere then
-        error(("the checkout at %s does not resolve: %s (a name the runtimepath reads differently: a comma, a dollar sign, a glob character)"):format(H.root, elsewhere))
+    for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
+        prove_module(H.root, modname, "the checkout", "a name the runtimepath reads differently: a comma, a dollar sign, a glob character")
     end
     return H.root
 end
@@ -185,9 +209,22 @@ end
 
 -- real_exit skips Neovim's teardown, which removes its per-process tempdir
 -- and H.isolate's XDG tree inside it (one left per unfinished red child on
--- 0.10 and 0.12, measured); tempname() creates that dir on demand if absent.
+-- 0.10 and 0.12, measured). The dir is resolved once, at load, and kept only
+-- when absolute and present: tempname() returns "" when Neovim has no
+-- tempdir, and the parent of "" is ".", which delete(.., "rf") would empty.
+local tempdir
+do
+    local name = vim.fn.tempname()
+    local dir = name ~= "" and vim.fn.fnamemodify(name, ":h") or ""
+    local absolute = dir:sub(1, 1) == "/" or dir:match("^%a:[/\\]") ~= nil
+    if absolute and vim.fn.isdirectory(dir) == 1 then
+        tempdir = dir
+    end
+end
 local function cleanup()
-    vim.fn.delete(vim.fn.fnamemodify(vim.fn.tempname(), ":h"), "rf")
+    if tempdir then
+        vim.fn.delete(tempdir, "rf")
+    end
 end
 
 -- Every exit the helper makes itself: output flushed, the tempdir removed.
