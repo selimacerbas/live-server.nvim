@@ -2,9 +2,14 @@
 -- runs it), so below the floor the module is a stub that answers every call
 -- with an empty string and never loads the code that needs vim.uv: a
 -- statusline component (lualine's, as the README shows) renders nil as the
--- word. The text is the plugin file's, so notify_once shows it once.
+-- word. The text is the plugin file's, so notify_once shows it once, and it
+-- waits for the loop as the plugin file's does: a lazy load on FileType runs
+-- inside 0.9's filetype nvim_cmd, where an ERROR notification raised
+-- Vim(append) with a traceback.
 if vim.fn.has("nvim-0.10") == 0 then
-    vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+    vim.schedule(function()
+        vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+    end)
     local function nothing()
         return ""
     end

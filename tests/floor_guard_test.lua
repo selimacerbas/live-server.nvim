@@ -43,6 +43,12 @@ local setup_ok, setup_err = pcall(function()
 end)
 H.ok(setup_ok, "setup() raises nothing below the floor" .. (setup_ok and "" or (": " .. tostring(setup_err))))
 H.eq(package.loaded["live_server.server"], nil, "the module returns before the server module, and vim.uv, load")
+-- A lazy load on FileType runs the module inside 0.9's filetype nvim_cmd,
+-- where an ERROR notification raised Vim(append), so this refusal waits too.
+H.eq(#notices, 1, "the module's refusal waits until the require returns")
+vim.wait(1000, function()
+    return #notices > 1
+end)
 H.eq(#notices, 2, "the module refuses with one notification too")
 -- lualine's documented component calls statusline(), and a nil there
 -- rendered as the word nil.
@@ -50,6 +56,11 @@ local status_ok, status = pcall(function()
     return require("live_server").statusline()
 end)
 H.eq(status_ok and status or ("raised " .. tostring(status)), "", "the stub's statusline is empty")
+-- Any other field a config calls answers the same, never a nil.
+local other_ok, other = pcall(function()
+    return require("live_server").anything_else()
+end)
+H.eq(other_ok and other or ("raised " .. tostring(other)), "", "an undocumented field on the stub answers the same")
 -- notify_once shows a text once, so one text between the two refusals is
 -- one notification on screen, whichever of them runs first.
 local texts, all_errors = {}, #notices > 0

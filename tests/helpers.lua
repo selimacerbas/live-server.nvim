@@ -433,9 +433,10 @@ end
 -- A message a suite caused may still hold its line open on stderr, which the
 -- runner merges into one stream: an empty echo ends that line and writes
 -- nothing when none is open (measured on both), so consecutive ledger lines
--- take no empty line between them. It cannot see an open message of exactly
--- 80 columns on 0.12.5, and a fast event may not echo. The flush stops a C
--- library that buffers a piped stdout from moving these lines behind stderr.
+-- take no empty line between them. It cannot see an open message that fills
+-- a multiple of 80 columns on 0.12.5, and a fast event may not echo. The
+-- flush stops a C library that buffers a piped stdout from moving these
+-- lines behind stderr.
 function H.write_line(line)
     if not vim.in_fast_event() then
         pcall(vim.api.nvim_echo, { { "" } }, false, {})
