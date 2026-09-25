@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs .githooks/message-policy, the two things the CI commits job judges,
+# Runs .githooks/message-policy, the rules the CI commits job judges,
 # on the message git will record. make hooks copies this file into the
 # clone's hooks directory; the policy is read from the working tree.
 #
