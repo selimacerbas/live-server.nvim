@@ -20,7 +20,7 @@ Start a server on any file or folder, auto-reload the browser on save, and quick
 
 ## Requirements
 
-* Neovim **0.10+** (on 0.9, pin the plugin to v1.5.0, the last release that runs there).
+* Neovim **0.10+** (on 0.9, pin the plugin to v1.5.0, the last release that runs there; v1.5.0 receives no fixes).
 * Linux, macOS, or Windows.
 * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) **recommended** for the best picking UX (falls back to `vim.ui.select/input` if missing).
 * [which-key.nvim](https://github.com/folke/which-key.nvim) recommended.
@@ -98,7 +98,7 @@ Configured via `require("live_server").setup({...})` or `opts = { ... }` in your
 {
   default_port     = 8000,           -- default suggestion in the port picker
   host             = "127.0.0.1",    -- bind address; "0.0.0.0" = all interfaces (network access)
-  token            = nil,            -- optional: require ?t=<token> on /__live endpoints + protected_paths
+  token            = nil,            -- optional: require ?t=<token> on /__live/events, /__live/inject, /__live/asset and protected_paths
   protected_paths  = {},             -- Lua patterns of request paths that also require the token
   open_on_start    = true,           -- open browser after start/retarget
   notify           = true,           -- use vim.notify for events
@@ -290,6 +290,7 @@ When `cfg.token` is set, the server requires `?t=<token>` on:
 
 * `/__live/events` (the SSE stream)
 * `/__live/inject` (event injection)
+* `/__live/asset` (the asset route)
 * Any path matching one of the Lua patterns in `cfg.protected_paths`
 
 Static assets (`index.html`, `style.css`, etc.) are intentionally not gated because the browser bootstraps from them before any JS runs and cannot append query strings to tags it discovers itself. Token-bearing requests for everything else are the caller's responsibility: pass `?t=<token>` to the browser via the initial URL, then stash it in `sessionStorage` and append it on every `fetch`/`EventSource` call.
@@ -309,8 +310,8 @@ Token auth is opt-in. When `cfg.token` is nil (the default), no auth is applied 
 
 ## Contributing
 
-PRs and issues are welcome!
-Please include your **OS**, **Neovim version**, and (if relevant) **`vim.uv`/luv** version when reporting bugs. Repro steps make fixes fast.
+PRs and issues are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) names the commands CI runs and the commit rules, and [SECURITY.md](SECURITY.md) says how to report a vulnerability privately.
+A bug report needs your **OS**, **Neovim version**, **plugin version**, the **minimal config** that reproduces it and the **`:messages`** output after the failure, as the bug form asks. Repro steps make fixes fast.
 
 ---
 
