@@ -36,11 +36,11 @@ body:
     id: config
     attributes:
       label: Minimal config
-      description: The smallest `setup({...})` and plugin spec that reproduces it.
+      description: The smallest `setup({...})` and plugin spec that reproduces it. Replace a fixed `token` value with `<redacted>` before pasting.
       render: lua
   - type: textarea
     id: health
     attributes:
       label: Diagnostics
-      description: The output of `:messages` after the failure, and `:checkhealth live_server` once your version has it.
+      description: The output of `:messages` after the failure, and `:checkhealth live_server` once your version has it. Replace a `?t=<token>` query in a pasted URL with `?t=<redacted>`.
       render: text
