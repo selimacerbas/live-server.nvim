@@ -160,6 +160,11 @@ vim.wait(1000, function()
     return #notices > 0
 end)
 H.eq(#notices, 1, "the plugin file refuses with one notification")
+-- A vim.notify a load queues beside its notify_once would be counted by the
+-- next case's rows, so each load's is read where it happens and cleared.
+turn_loop()
+H.eq(#refusals, 0, "the plugin file's load notifies through notify_once alone")
+refusals = {}
 -- A cmd spec runs the command through vim.cmd inside lazy.nvim's handler,
 -- where an ERROR notification on 0.9 raised a traceback, so a refuser's waits
 -- too; every use answers, a second one included.
@@ -178,6 +183,7 @@ for _, refusal in ipairs(refusals) do
     refused_right = refused_right and refusal.msg == message and refusal.level == vim.log.levels.ERROR
 end
 H.ok(refused_right, "every refuser answers with the floor text as an ERROR")
+refusals = {}
 -- lazy.nvim's config calls setup() whatever the plugin file did.
 package.loaded[MODULE] = nil
 local setup_ok, setup_err = pcall(function()
@@ -194,6 +200,8 @@ vim.wait(1000, function()
     return #notices > 1
 end)
 H.eq(#notices, 2, "the module refuses with one notification too")
+turn_loop()
+H.eq(#refusals, 0, "the module's load notifies through notify_once alone")
 -- lualine's documented component calls statusline(), and a nil there
 -- rendered as the word nil.
 local status_ok, status = pcall(function()
@@ -248,12 +256,13 @@ H.eq(
     message,
     "without notify_once the plugin file shows the text once"
 )
+refusals = {}
 local again_ok, again_err = pcall(function()
     require(MODULE).setup({})
 end)
 turn_loop()
 H.eq(
-    not again_ok and ("setup() raised " .. tostring(again_err)) or (#refusals == 2 and refusals[2].msg or #refusals),
+    not again_ok and ("setup() raised " .. tostring(again_err)) or (#refusals == 1 and refusals[1].msg or #refusals),
     message,
     "without notify_once the module shows the text once"
 )
