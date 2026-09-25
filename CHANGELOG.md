@@ -4,13 +4,13 @@ All notable changes to this project. The format follows Keep a Changelog; versio
 
 ## [Unreleased]
 
-### Removed
-
-- **BREAKING:** Neovim 0.9 support. On 0.9 the plugin shows one notification, "live-server.nvim requires Neovim 0.10 or newer; on Neovim 0.9 pin the plugin to v1.5.0", every command refuses with the same message, the statusline component shows nothing, and requiring `live_server.server` or `live_server.util` raises the message. To stay on Neovim 0.9, pin `v1.5.0`, the last release that runs there.
-
 ### Changed
 
 - The picker titles read `LiveServer: Choose path` and `LiveServer: Pick file`.
+
+### Removed
+
+- **BREAKING:** Neovim 0.9 support. On 0.9 the plugin shows one notification, "live-server.nvim requires Neovim 0.10 or newer; on Neovim 0.9 pin the plugin to v1.5.0", every command refuses with the same message, the statusline component shows nothing, and requiring `live_server.server` or `live_server.util` raises the message. To stay on Neovim 0.9, pin `v1.5.0`, the last release that runs there.
 
 ## [1.5.0] - 2026-07-07
 
@@ -90,3 +90,13 @@ Pure-Lua local web server for Neovim with live-reload. Zero external dependencie
 ```
 
 See [README](https://github.com/selimacerbas/live-server.nvim#readme) for full setup and configuration.
+
+[Unreleased]: https://github.com/selimacerbas/live-server.nvim/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.5.0
+[1.4.0]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.4.0
+[1.3.0]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.3.0
+[1.2.2]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.2.2
+[1.2.1]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.2.1
+[1.2.0]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.2.0
+[1.1.0]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.1.0
+[1.0.0]: https://github.com/selimacerbas/live-server.nvim/releases/tag/v1.0.0
