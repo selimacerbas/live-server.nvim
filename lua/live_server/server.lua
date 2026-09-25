@@ -1,8 +1,13 @@
 -- The plugin-author API loads this module directly, past both guards that
--- notify: below the floor it refuses at load with the plugin's text (level 0
--- leaves the position out) rather than at the first use of vim.uv.
-if vim.fn.has("nvim-0.10") == 0 then
-    error("live-server.nvim requires Neovim 0.10 or newer", 0)
+-- notify: below the floor it refuses at load with the floor module's text
+-- (level 0 leaves the position out) rather than at the first use of vim.uv.
+-- A failed load leaves require's sentinel behind, which answers a retry with
+-- "loop or previous error", so the entry is cleared first and every require
+-- reads the text.
+local floor = require("live_server.floor")
+if not floor.ok then
+    package.loaded["live_server.server"] = nil
+    error(floor.message, 0)
 end
 
 local uv = vim.uv

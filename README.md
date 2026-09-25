@@ -20,7 +20,7 @@ Start a server on any file or folder, auto-reload the browser on save, and quick
 
 ## Requirements
 
-* Neovim **0.10+**.
+* Neovim **0.10+** (on 0.9, pin the plugin to v1.5.0, the last release that runs there).
 * Linux, macOS, or Windows.
 * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) **recommended** for the best picking UX (falls back to `vim.ui.select/input` if missing).
 * [which-key.nvim](https://github.com/folke/which-key.nvim) recommended.
@@ -254,6 +254,8 @@ ls.stop_all()                    -- stop everything
 ```
 
 ### Server-level API (for plugin authors)
+
+Below Neovim 0.10, `require("live_server.server")` and `require("live_server.util")` raise the floor message, on every `require`, so a plugin that also runs on an older Neovim loads them under `pcall`.
 
 ```lua
 local server = require("live_server.server")

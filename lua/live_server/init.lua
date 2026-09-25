@@ -1,19 +1,22 @@
 -- A config calls setup() whatever the plugin file did (lazy.nvim's config
 -- runs it), so below the floor the module is a stub that answers every call
--- with an empty string and never loads the code that needs vim.uv: a
--- statusline component (lualine's, as the README shows) renders nil as the
--- word. The text is the plugin file's, so notify_once shows it once, and it
+-- with an empty string and returns before the requires below, whose code
+-- needs vim.uv: a statusline component (lualine's, as the README shows)
+-- renders nil as the word. The text is the floor module's, so notify_once
+-- shows it once with the plugin file's (notify_once arrived in 0.7), and it
 -- waits for the loop as the plugin file's does: a lazy load on FileType runs
 -- inside 0.9's filetype nvim_cmd, where an ERROR notification raised
 -- Vim(append) with a traceback.
-if vim.fn.has("nvim-0.10") == 0 then
+local floor = require("live_server.floor")
+if not floor.ok then
     vim.schedule(function()
-        vim.notify_once("live-server.nvim requires Neovim 0.10 or newer", vim.log.levels.ERROR)
+        local notify = vim.notify_once or vim.notify
+        notify(floor.message, vim.log.levels.ERROR)
     end)
     local function nothing()
         return ""
     end
-    return setmetatable({ statusline = nothing }, {
+    return setmetatable({}, {
         __index = function()
             return nothing
         end,

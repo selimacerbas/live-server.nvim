@@ -31,7 +31,8 @@ not production.
 ===============================================================================
 REQUIREMENTS                                    *live-server-requirements*
 
-- Neovim 0.10+
+- Neovim 0.10+ (on 0.9, pin the plugin to v1.5.0, the last release that
+  runs there)
 - Linux, macOS, or Windows
 
 Optional:
