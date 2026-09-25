@@ -681,14 +681,19 @@ else
     H.write_file(plain_ls .. "/lua/live_server/util.lua", "return {}\n")
     -- A brace group with a comma makes building the search path raise E220
     -- here (measured), which the refusal names in place of a raw traceback.
-    -- The hosted Windows run exited 1 without that text, which fits a
-    -- runtimepath that reads the brace literally and loads the checkout: that
-    -- outcome is a counted skip, and any other stays red with the output.
+    -- The hosted Windows runner drops the entry instead, a glob that matches
+    -- nothing, with no error (measured), so the proof finds no hit and the
+    -- refusal names the reason: the same refusal, reached another way. A
+    -- runtimepath that reads the brace literally loads the checkout, a
+    -- counted skip; any other outcome stays red with the output.
     local braced = base .. "/d{a,b}/checkout"
     checkout(braced)
     local brace_want = "child_test%.lua:2: "
         .. vim.pesc(("the checkout at %s does not resolve: the runtimepath raised "):format(H.canon(braced)))
         .. "[^\n]*E220"
+    local brace_dropped = "child_test%.lua:2: "
+        .. vim.pesc(("the checkout at %s does not resolve: nil ("):format(H.canon(braced)))
+        .. "[^\n]*a brace"
     local brace_code, brace_out = child_exit(
         'H.rtp()\nH.write_line("the checkout loaded")\nH.ok(true, "loaded")\nH.finish()',
         "",
@@ -705,10 +710,19 @@ else
             1,
             rtp_cases[2]
         )
+    elseif brace_out:find(brace_dropped) then
+        eq(brace_code, 1, rtp_cases[2] .. " (the runtimepath drops the entry here: the proof's refusal, no E220)")
     elseif brace_code == 0 and brace_out:find("the checkout loaded", 1, true) then
         H.skip(rtp_cases[2] .. " (the runtimepath reads the brace literally here: the checkout loaded without E220)")
     else
-        eq(("exit %s without E220; the child wrote %s"):format(brace_code, vim.inspect(brace_out)), 1, rtp_cases[2])
+        eq(
+            ("exit %s without E220 or the proof's refusal; the child wrote %s"):format(
+                brace_code,
+                vim.inspect(brace_out)
+            ),
+            1,
+            rtp_cases[2]
+        )
     end
     -- The runtimepath gets the checkout by the name the helper was loaded
     -- through, so a link without a comma loads where the physical name would
