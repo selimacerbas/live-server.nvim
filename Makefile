@@ -28,10 +28,12 @@ hooks: ## Install the commit-msg hook into this clone
 # checkout, node_modules/) never enters. StyLua exits 0 when it is handed no
 # file, so an empty list fails here instead.
 fmt: ## Format every tracked Lua file with the pinned StyLua
+	@command -v bun >/dev/null 2>&1 || { echo 'fmt: bun runs StyLua and is not installed; install it from https://bun.sh' >&2; exit 1; }
 	@[ -n "$$(git ls-files -- '*.lua')" ] || { echo 'fmt: git lists no tracked Lua file' >&2; exit 1; }
 	git ls-files -z -- '*.lua' | xargs -0 $(STYLUA)
 
 fmt-check: ## Fail when a tracked Lua file is not formatted (the CI format job runs this)
+	@command -v bun >/dev/null 2>&1 || { echo 'fmt-check: bun runs StyLua and is not installed; install it from https://bun.sh' >&2; exit 1; }
 	@[ -n "$$(git ls-files -- '*.lua')" ] || { echo 'fmt-check: git lists no tracked Lua file' >&2; exit 1; }
 	@git ls-files -z -- '*.lua' | xargs -0 $(STYLUA) --check || { echo 'run make fmt to format' >&2; exit 1; }
 
@@ -39,11 +41,11 @@ fmt-check: ## Fail when a tracked Lua file is not formatted (the CI format job r
 # (dash on Ubuntu, which reads $'...' as literal text) and this file must not
 # carry it. git grep searches the tracked files and keeps "none found" (1)
 # apart from a failure (2 and up), which a grep under xargs folds together.
-# README.md, CLAUDE.md and doc/ are the docs sweep's; drop them from the
-# exclusion when it lands.
+# README.md and doc/ are the docs sweep's; drop them from the exclusion when
+# it lands.
 lint-text: ## Refuse the em dash character in code, product copy and configuration
 	@dash=$$(printf '\342\200\224'); \
-	git grep -l -F -e "$$dash" -- . ':!README.md' ':!CLAUDE.md' ':!doc/'; rc=$$?; \
+	git grep -l -F -e "$$dash" -- . ':!README.md' ':!doc/'; rc=$$?; \
 	if [ $$rc -eq 0 ]; then echo 'lint-text: the files above carry the em dash character' >&2; exit 1; fi; \
 	if [ $$rc -ne 1 ]; then echo "lint-text: git grep failed (exit $$rc)" >&2; exit 1; fi
 
