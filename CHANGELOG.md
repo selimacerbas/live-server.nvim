@@ -7,10 +7,16 @@ All notable changes to this project; versions follow SemVer. From `[Unreleased]`
 ### Changed
 
 - The picker titles read `LiveServer: Choose path` and `LiveServer: Pick file`.
+- `vim.uv` replaces the deprecated `vim.loop` throughout.
 
 ### Removed
 
-- **BREAKING:** Neovim 0.8 and 0.9 support (v1.5.0's README declared 0.8+). Below 0.10 the plugin shows one notification, "live-server.nvim requires Neovim 0.10 or newer; on Neovim 0.9 pin the plugin to v1.5.0", every command refuses with the same message, the statusline component shows nothing, and requiring `live_server.server` or `live_server.util` raises the message. To stay on Neovim 0.8 or 0.9, pin v1.5.0, the last release that runs there (`tag = "v1.5.0"` in a lazy.nvim spec); v1.5.0 receives no further fixes.
+- **BREAKING:** Neovim 0.8 and 0.9 support (v1.5.0's README declared 0.8+). Below 0.10 the plugin shows one notification, "live-server.nvim requires Neovim 0.10 or newer; on Neovim 0.8 or 0.9 pin the plugin to v1.5.0", every command refuses with the same message, the statusline component shows nothing, and requiring `live_server.server` or `live_server.util` raises the message. To stay on Neovim 0.8 or 0.9, pin v1.5.0, the last release that runs there (`tag = "v1.5.0"` in a lazy.nvim spec); from the next release on, v1.5.0 receives no further fixes.
+
+### Fixed
+
+- When `vim.ui.open` finds no opener, the browser is opened with `open`, `xdg-open` or `start`, and a notification names the URL when that fails too; before, nothing opened and nothing said so.
+- The exit hook that stops every server when Neovim quits joins the `LiveServerExit` augroup, so sourcing the plugin file again replaces it instead of adding a second.
 
 ## [1.5.0] - 2026-07-07
 

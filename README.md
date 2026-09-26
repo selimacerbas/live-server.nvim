@@ -20,7 +20,7 @@ Start a server on any file or folder, auto-reload the browser on save, and quick
 
 ## Requirements
 
-* Neovim **0.10+** (on Neovim 0.8 or 0.9, pin the plugin to v1.5.0, the last release that runs there; v1.5.0 receives no fixes).
+* Neovim **0.10+** (on Neovim 0.8 or 0.9, pin the plugin to v1.5.0, the last release that runs there; from the next release on, v1.5.0 receives no fixes).
 * Linux, macOS, or Windows.
 * [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) **recommended** for the best picking UX (falls back to `vim.ui.select/input` if missing).
 * [which-key.nvim](https://github.com/folke/which-key.nvim) recommended.
@@ -98,7 +98,7 @@ Configured via `require("live_server").setup({...})` or `opts = { ... }` in your
 {
   default_port     = 8000,           -- default suggestion in the port picker
   host             = "127.0.0.1",    -- bind address; "0.0.0.0" = all interfaces (network access)
-  token            = nil,            -- optional: require ?t=<token> on /__live/events, /__live/inject, /__live/asset and protected_paths
+  token            = nil,            -- optional: require ?t=<token> on /__live/events, /__live/inject and protected_paths (and on /__live/asset, which only a caller of server.start() that passes asset_root enables)
   protected_paths  = {},             -- Lua patterns of request paths that also require the token
   open_on_start    = true,           -- open browser after start/retarget
   notify           = true,           -- use vim.notify for events

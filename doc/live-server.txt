@@ -25,14 +25,15 @@ Features:
 - CORS headers
 - Styled error pages (dark-mode aware)
 
-The server binds to `127.0.0.1` only. It is meant for local dev previews,
-not production.
+The server binds to `127.0.0.1` unless the `host` option says otherwise
+(|live-server-options|). It is meant for local dev previews, not
+production; read SECURITY.md before binding beyond loopback.
 
 ===============================================================================
 REQUIREMENTS                                    *live-server-requirements*
 
-- Neovim 0.10+ (on 0.9, pin the plugin to v1.5.0, the last release that
-  runs there)
+- Neovim 0.10+ (on Neovim 0.8 or 0.9 pin the plugin to v1.5.0, which
+  receives no further fixes)
 - Linux, macOS, or Windows
 
 Optional:
@@ -103,6 +104,21 @@ Options:
 
 `default_port` (number, default 8000)
     Default port suggestion in the port picker.
+
+`host` (string, default `"127.0.0.1"`)
+    Bind address; `"0.0.0.0"` serves every file under the root to anyone
+    who can reach the port.
+
+`token` (string|nil, default nil)
+    When set, the event stream, the inject endpoint and the paths
+    `protected_paths` names require `?t=<token>`; other files stay open.
+
+`protected_paths` (string[], default `{}`)
+    Lua patterns of request paths that also require the token.
+
+`asset_root` is not a setup option: a plugin that calls
+`require("live_server.server").start()` passes it, and the token then
+gates `/__live/asset` too.
 
 `open_on_start` (boolean, default true)
     Open the browser automatically after starting or retargeting.
@@ -243,9 +259,9 @@ Port in use ~
     `:LiveServerStop` / `:LiveServerStopAll`.
 
 Browser didn't open ~
-    The plugin tries `vim.ui.open`, then falls back to `open` (macOS),
-    `xdg-open` (Linux), or `start` (Windows). If none work, copy the URL
-    from the notification.
+    The plugin tries `vim.ui.open`; when that finds no opener it runs
+    `open` (macOS), `xdg-open` (Linux) or `start` (Windows), and when that
+    cannot start or fails, a notification names the URL to open by hand.
 
 Live-reload didn't trigger ~
     - Only HTML pages get the injected script.

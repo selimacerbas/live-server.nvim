@@ -3,7 +3,7 @@
 -- listed in cfg.protected_paths, while leaving static assets (index.html)
 -- reachable without auth.
 --
--- Run: nvim --headless -u NONE -l tests/token_auth_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/token_auth_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()

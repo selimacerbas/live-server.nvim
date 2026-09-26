@@ -3,9 +3,10 @@
 --   - "127.0.0.1" (default) is reachable on loopback and refuses the LAN IP
 --   - "0.0.0.0" is reachable on both
 -- The socket's own address is asserted for both; the LAN probes are skipped,
--- counted, where a host firewall intercepts them.
+-- counted, where a host firewall intercepts them, which a control listener
+-- of this process tells apart from a server that does not answer.
 --
--- Run: nvim --headless -u NONE -l tests/host_binding_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/host_binding_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()
@@ -92,26 +93,67 @@ eq(sn and sn.ip, "0.0.0.0", "socket bound to wildcard address")
 r = http_get(("http://127.0.0.1:%d/"):format(port))
 eq(r.status, 200, "loopback reachable on 0.0.0.0 bind")
 
--- Only a probe that never got an HTTP answer is a host firewall's doing:
--- curl 28 when it drops the connect, 52 or 56 when it accepts and then
--- closes or resets (this Mac's application firewall: 52 in 14 of 15 runs,
--- 56 in one). A listener reached with any status but 200, or a refused
--- connect (curl 7: nothing on the wildcard address), is this plugin's red.
+-- A host firewall answers the LAN probe with no HTTP answer: curl 28 when
+-- it drops the connect, 52 or 56 when it accepts and then closes or resets
+-- (this Mac's application firewall: 52 for every listener of this process,
+-- while a closed port reads 7, measured). A server that hangs or closes
+-- reads the same, so a control listener of this process on the same
+-- wildcard address, answering 200, is probed first: the firewall treats it
+-- as it treats the server, so a server probe of 28, 52 or 56 is a skip only
+-- when the control got no answer either. Any other server result, an HTTP
+-- status the firewall let through or a refused connect, is this plugin's
+-- red whatever the control got.
 -- lan_skipped says why the LAN probe did not measure; Section 3 skips on it.
-local lan_skipped
+local function control_probe(ip)
+    local tcp = uv.new_tcp()
+    tcp:bind("0.0.0.0", 0)
+    tcp:listen(16, function(err)
+        if err then
+            return
+        end
+        local client = uv.new_tcp()
+        tcp:accept(client)
+        client:read_start(function(_, data)
+            if client:is_closing() then
+                return
+            end
+            if data then
+                client:write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok", function()
+                    client:close()
+                end)
+            else
+                client:close()
+            end
+        end)
+    end)
+    local res = http_get(("http://%s:%d/"):format(ip, tcp:getsockname().port))
+    tcp:close()
+    return res
+end
+local lan_skipped, control
 if not (lan_ip and lan_ip ~= "127.0.0.1") then
     lan_skipped = "could not determine a LAN IP"
 else
+    control = control_probe(lan_ip)
     r = http_get(("http://%s:%d/"):format(lan_ip, port))
-    if r.curl_exit == 28 or r.curl_exit == 52 or r.curl_exit == 56 then
-        lan_skipped = ("LAN IP %s gave no HTTP answer (curl %d): a host firewall"):format(lan_ip, r.curl_exit)
+    local no_answer = r.curl_exit == 28 or r.curl_exit == 52 or r.curl_exit == 56
+    if no_answer and control.status ~= 200 then
+        lan_skipped = ("LAN IP %s answered neither the server (curl %d) nor a control listener (curl %d): a host firewall"):format(
+            lan_ip,
+            r.curl_exit,
+            control.curl_exit
+        )
     end
 end
 if lan_skipped then
     H.skip("LAN IP reachable on 0.0.0.0 bind (" .. lan_skipped .. "; bind address asserted above)")
 else
     eq(
-        ("status %d, curl %d"):format(r.status, r.curl_exit),
+        ("status %d, curl %d"):format(r.status, r.curl_exit)
+            .. (
+                r.status == 200 and ""
+                or (", where the control got status %d, curl %d"):format(control.status, control.curl_exit)
+            ),
         "status 200, curl 0",
         ("LAN IP %s reachable on 0.0.0.0 bind"):format(lan_ip)
     )
@@ -123,7 +165,8 @@ server.stop(inst)
 H.section("Section 3: host = '127.0.0.1' refuses the LAN IP")
 -- Refused is curl 7. A firewall that intercepts the LAN probe would pass any
 -- weaker check, so where the wildcard bind's probe did not measure
--- (Section 2) this one is skipped rather than passed.
+-- (Section 2: neither it nor the control answered) this one is skipped
+-- rather than passed.
 if lan_skipped then
     H.skip("LAN IP refuses a 127.0.0.1 bind (" .. lan_skipped .. ")")
 else

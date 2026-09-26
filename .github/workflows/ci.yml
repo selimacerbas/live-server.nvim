@@ -46,11 +46,11 @@ jobs:
       # in a callback reach the exit code through
       # H.finish() (tests/helpers.lua).
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh
       # One leg is enough for a POSIX sh script with no Neovim in it; it runs
       # after a red suite too, as make test runs both.
       - name: Commit-message policy test
-        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         run: sh tests/message_policy_test.sh
 
   # The floor this plugin requires (the README states it from the floor
@@ -70,7 +70,7 @@ jobs:
       - name: Version
         run: nvim --version | head -n 3
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh
 
   # Below the floor on a real Neovim: the suites need 0.10, and floor_guard
   # mocks has() on a supported one, which passes a 0.10 API reached before a
@@ -92,16 +92,13 @@ jobs:
       - name: Below-floor smoke
         run: sh tests/floor_smoke.sh
 
-  # Measures the suites on Windows; the token fallback (no /dev/urandom) has
-  # no assertion of its own yet. It reports, and joins ci-ok once it has been
-  # green.
+  # The suites on Windows, gating as the other test jobs do; it joined ci-ok
+  # after three green hosted runs. The token fallback (no /dev/urandom) has
+  # no assertion of its own.
   windows:
     name: windows (nvim stable)
     runs-on: windows-latest
     timeout-minutes: 15
-    # On push and pull_request runs the conclusion follows ci-ok; a red here
-    # is read from this job's own conclusion and never blocks a merge.
-    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -116,7 +113,7 @@ jobs:
       - name: Version
         run: nvim --version | head -n 3
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh
 
   lint-workflows:
     runs-on: ubuntu-latest
@@ -135,14 +132,19 @@ jobs:
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
         with:
           args: -color
+      # The target holds the list of scripts; the binary is the shellcheck
+      # the actionlint image carries (0.11.0, measured), run by the same
+      # digest, which moves with the one above.
+      - name: make shellcheck
+        run: make shellcheck SHELLCHECK="docker run --rm -v $GITHUB_WORKSPACE:/w:ro -w /w --entrypoint shellcheck rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667"
       - name: make lint-text
         run: make lint-text
       - name: make lint-blame
         run: make lint-blame
 
-  # The Makefile holds the one StyLua pin; the job runs its target. An exact
-  # bun-version needs no GitHub API lookup, so no step here holds the job
-  # token.
+  # The Makefile holds the one StyLua pin; the job runs its target. The
+  # checkout holds the job token for the clone and persists no credential;
+  # setup-bun gets none, since an exact bun-version needs no API lookup.
   format:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -160,9 +162,13 @@ jobs:
   # The pull request arm judges a contributor's commits, title and body before
   # they land; the push arm reports what already landed on main, a direct push
   # and the merge or squash commit GitHub composes included. A push range it
-  # cannot read is noticed, never judged.
+  # cannot read is noticed, never judged. A manual run judges the commit it
+  # runs on, alone. A pull request GitHub's Dependabot
+  # opened (keyed on the login GitHub sets, never on a commit's author name,
+  # which anyone can write) is machine-authored: its sign-off line is
+  # accepted on its commits and its body, release notes, is not judged; the
+  # maintainer replaces that body when merging (CONTRIBUTING.md).
   commits:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -178,6 +184,7 @@ jobs:
         env:
           TITLE: ${{ github.event.pull_request.title }}
           BODY: ${{ github.event.pull_request.body }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
           # ${#TITLE} counts characters, not bytes, only under a UTF-8 locale.
           LC_ALL: C.UTF-8
         run: |
@@ -186,6 +193,10 @@ jobs:
           if [ "${#TITLE}" -gt 65 ]; then
             printf '::error::the title is %s characters, over 65: %s\n' "${#TITLE}" "$TITLE"
             fail=1
+          fi
+          if [ "$AUTHOR" = 'dependabot[bot]' ]; then
+            echo "::notice::a Dependabot pull request: the title is judged, the body is not"
+            BODY=
           fi
           if out=$(printf '%s\n\n%s\n' "$TITLE" "$BODY" | .githooks/message-policy - 2>&1); then
             rc=0
@@ -210,9 +221,20 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = pull_request ]; then
+          # An empty sed script passes every line; Dependabot's one drops
+          # its own sign-off line, exactly as it writes it, and nothing else.
+          drop=
+          if [ "$AUTHOR" = 'dependabot[bot]' ]; then
+            echo "::notice::a Dependabot pull request: its sign-off line is accepted on each commit"
+            drop='/^Signed-off-by: dependabot\[bot\] <support@github\.com>$/d'
+          fi
+          if [ "$EVENT" = workflow_dispatch ]; then
+            echo "::notice::a manual run names no range; the commit it runs on is judged alone"
+            range="$GITHUB_SHA^!"
+          elif [ "$EVENT" = pull_request ]; then
             # The test merge's first parent is the base GitHub merged into;
             # pull_request.base.sha goes stale once the branch merges main.
             range="$(git rev-parse "$GITHUB_SHA^1")..$PR_HEAD"
@@ -250,7 +272,7 @@ jobs:
           shas=$(git rev-list --reverse "$range")
           fail=0
           for sha in $shas; do
-            if out=$(git show -s --format=%B "$sha" | .githooks/message-policy - 2>&1); then
+            if out=$(git show -s --format=%B "$sha" | sed "$drop" | .githooks/message-policy - 2>&1); then
               continue
             else
               rc=$?
@@ -267,28 +289,31 @@ jobs:
           done
           exit "$fail"
 
-  # The one status check branch protection is meant to require (an operator
-  # step later). Each gating job is named, so an empty or shortened needs list
+  # The one status check branch protection requires, strict, on both
+  # repositories. Its context is this job's id, so renaming the job or giving
+  # it a name: leaves every pull request waiting on a check that never
+  # reports. Each gating job is named, so an empty or shortened needs list
   # cannot pass. Each check line ends in exit 1: under bash -e a failed test
   # inside an && list does not stop the script, so a later line that passed
-  # would pass a red run (measured). commits runs on every pull request and
-  # push, so only a manual run may skip it.
+  # would pass a red run (measured). commits runs on every event, so a manual
+  # run of a pull request's head posts no green ci-ok that judged no commit.
   ci-ok:
     if: always()
-    needs: [test, floor, floor-below, lint-workflows, format, commits]
+    needs: [test, floor, floor-below, windows, lint-workflows, format, commits]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every gating job succeeded (commits is skipped on a manual run)
+      - name: Every gating job succeeded
         env:
           EVENT: ${{ github.event_name }}
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
           FLOOR_BELOW: ${{ needs.floor-below.result }}
+          WINDOWS: ${{ needs.windows.result }}
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
           COMMITS: ${{ needs.commits.result }}
         run: |
-          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
-          [ "$COMMITS" = success ] || { [ "$EVENT" = workflow_dispatch ] && [ "$COMMITS" = skipped ]; } || exit 1
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
+          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW windows=$WINDOWS lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
+          [ "$COMMITS" = success ] || exit 1
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$WINDOWS" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
