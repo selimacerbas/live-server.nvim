@@ -531,11 +531,12 @@ end
 function S.start(cfg)
     local tcp = uv.new_tcp()
     local host = cfg.host or "127.0.0.1"
-    local ok, bind_err = pcall(function()
-        tcp:bind(host, cfg.port)
-    end)
+    -- The caller shows the message to the user, so it carries no source
+    -- position: bind is called directly under pcall, which adds none, and the
+    -- raise is at level 0.
+    local ok, bind_err = pcall(tcp.bind, tcp, host, cfg.port)
     if not ok then
-        error(bind_err or "bind failed")
+        error(bind_err or "bind failed", 0)
     end
 
     -- Resolve actual port (needed when cfg.port == 0 for OS-assigned port)
@@ -546,7 +547,7 @@ function S.start(cfg)
 
     local root_real = uv.fs_realpath(cfg.root)
     if not root_real then
-        error("Invalid root: " .. tostring(cfg.root))
+        error("Invalid root: " .. tostring(cfg.root), 0)
     end
 
     local headers = vim.tbl_extend("keep", cfg.headers or {}, {})
