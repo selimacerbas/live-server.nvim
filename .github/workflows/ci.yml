@@ -46,7 +46,7 @@ jobs:
       # in a callback reach the exit code through
       # H.finish() (tests/helpers.lua).
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh
       # One leg is enough for a POSIX sh script with no Neovim in it; it runs
       # after a red suite too, as make test runs both.
       - name: Commit-message policy test
@@ -70,7 +70,7 @@ jobs:
       - name: Version
         run: nvim --version | head -n 3
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh
 
   # Below the floor on a real Neovim: the suites need 0.10, and floor_guard
   # mocks has() on a supported one, which passes a 0.10 API reached before a
@@ -113,7 +113,7 @@ jobs:
       - name: Version
         run: nvim --version | head -n 3
       - name: Headless tests
-        run: bash tests/run.sh
+        run: sh tests/run.sh
 
   lint-workflows:
     runs-on: ubuntu-latest
