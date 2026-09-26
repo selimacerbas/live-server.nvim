@@ -1,6 +1,6 @@
 # Contributing
 
-Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text` and `make lint-blame` run here as they run in CI. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, or a binary from <https://github.com/rhysd/actionlint/releases>). The `floor` (Neovim 0.10.0), `floor-below` (Neovim 0.9.5), `windows` and `commits` jobs run only in CI; the commit-msg hook below runs the `commits` job's policy locally.
+Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text` and `make lint-blame` run here as they run in CI. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, whose formula brings shellcheck; a binary from <https://github.com/rhysd/actionlint/releases> does not, and without shellcheck on PATH actionlint skips its shell checks, so a local green can differ from CI's). The `floor` (Neovim 0.10.0), `windows` and `commits` jobs run only in CI; `floor-below` (Neovim 0.9.5) runs `tests/floor_smoke.sh`, which runs locally too with a Neovim below the floor first on PATH; the commit-msg hook below runs the `commits` job's policy locally. The `nightly` workflow runs the suites weekly against Neovim nightly; GitHub disables a scheduled workflow after 60 days without a commit, and `gh workflow enable nightly` turns it back on.
 
 You need Neovim 0.10 or newer, curl for the four suites that make HTTP requests, and bun for the formatter.
 
@@ -10,7 +10,9 @@ You need Neovim 0.10 or newer, curl for the four suites that make HTTP requests,
 
 runs every suite through `tests/run.sh`, the same loop CI runs, and then `tests/message_policy_test.sh`, which commits in a scratch repository through the hook (`sh tests/message_policy_test.sh` alone). Each suite is a plain Lua file under `tests/` that runs headless and exits 1 on any failure, so one can be run alone:
 
-    nvim --headless -u NONE -l tests/token_auth_test.lua
+    nvim --headless -u NONE -l "$PWD/tests/token_auth_test.lua"
+
+The absolute name is the one `tests/run.sh` passes: a relative one is made absolute against the physical directory, which loses a link the checkout is reached through (`tests/helpers.lua` says why that matters).
 
 ## Shared files
 
@@ -50,3 +52,16 @@ A pull request Dependabot opens is machine-authored, keyed on the pull request's
 2. Tag only a commit whose `ci-ok` is green (`gh run list --commit <sha>`): `git tag -a vX.Y.Z -m "vX.Y.Z"`, `git push origin vX.Y.Z`. The tags v1.0.0 and v1.1.0 are annotated and v1.2.0 to v1.5.0 are lightweight, so `git describe` needs `--tags` until the next annotated tag.
    The `release tags` ruleset refuses moving or deleting a `v*` tag, so a mistaken tag is fixed by editing the ruleset once (Settings, Rules), and every new `v*` tag is covered from its push. markdown-preview.nvim pins its live-server floor by tag and commit (`LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in its `ci.yml`, beside `H.live_server_floor` in its `tests/helpers.lua`): a release that moves that floor edits the three there in one change.
 3. `gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file <the section as a file>`.
+
+### Moving the floor
+
+A release that moves the Neovim floor edits every place that states it, together (`git grep -n '0\.10'` and `git grep -n 'v1\.5\.0'` find them, beside harness comments that name a version they were measured on):
+
+- `lua/live_server/floor.lua`: the check and the message, which the plugin file, the module and the smoke read;
+- `plugin/live_server.lua`: the refusers' description;
+- the README's requirements line, the vimdoc's REQUIREMENTS, SECURITY.md's supported versions and a CHANGELOG entry;
+- this file's prerequisites and job list;
+- `.github/workflows/ci.yml`: the `floor` job's version and name, and `floor-below`'s version, the newest release below the floor;
+- `tests/floor_guard_test.lua`, which pins the text, and the comments of `tests/floor_smoke.sh`;
+- the bug template's version placeholder;
+- markdown-preview.nvim, when its live-server floor moves with the release: `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in its `ci.yml`, `H.live_server_floor` in its `tests/helpers.lua`, and its AGENTS.md and CHANGELOG.
