@@ -59,9 +59,9 @@ A release that moves the Neovim floor edits every place that states it, together
 
 - `lua/live_server/floor.lua`: the check and the message, which the plugin file, the module and the smoke read;
 - `plugin/live_server.lua`: the refusers' description;
-- the README's requirements line, the vimdoc's REQUIREMENTS, SECURITY.md's supported versions and a CHANGELOG entry;
+- the README's requirements line and its plugin-author note (the floor message `live_server.server` and `live_server.util` raise), the vimdoc's REQUIREMENTS, SECURITY.md's supported versions and a CHANGELOG entry;
 - this file's prerequisites and job list;
-- `.github/workflows/ci.yml`: the `floor` job's version and name, and `floor-below`'s version, the newest release below the floor;
+- `.github/workflows/ci.yml`: the `floor` job's version and name, `floor-below`'s version and name (the newest release below the floor), and the comments above both;
 - `tests/floor_guard_test.lua`, which pins the text, and the comments of `tests/floor_smoke.sh`;
 - the bug template's version placeholder;
 - markdown-preview.nvim, when its live-server floor moves with the release: `LIVE_SERVER_FLOOR` and `LIVE_SERVER_FLOOR_SHA` in its `ci.yml`, `H.live_server_floor` in its `tests/helpers.lua`, and its AGENTS.md and CHANGELOG.
