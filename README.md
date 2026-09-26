@@ -98,7 +98,7 @@ Configured via `require("live_server").setup({...})` or `opts = { ... }` in your
 {
   default_port     = 8000,           -- default suggestion in the port picker
   host             = "127.0.0.1",    -- bind address; "0.0.0.0" = all interfaces (network access)
-  token            = nil,            -- optional: require ?t=<token> on /__live/events, /__live/inject, /__live/asset and protected_paths
+  token            = nil,            -- optional: require ?t=<token> on /__live/events, /__live/inject and protected_paths (and on /__live/asset, which only a caller of server.start() that passes asset_root enables)
   protected_paths  = {},             -- Lua patterns of request paths that also require the token
   open_on_start    = true,           -- open browser after start/retarget
   notify           = true,           -- use vim.notify for events

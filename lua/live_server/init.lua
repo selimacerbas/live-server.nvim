@@ -41,8 +41,10 @@ local defaults = {
 
     -- Optional auth: when token is set, /__live/events and /__live/inject
     -- require ?t=<token>, as does any request path matching protected_paths
-    -- (Lua patterns). Everything else is still served openly: with a
-    -- non-loopback host the whole served root is reachable from the network.
+    -- (Lua patterns), and /__live/asset where a caller of server.start()
+    -- passes asset_root, which setup() never does. Everything else is still
+    -- served openly: with a non-loopback host the whole served root is
+    -- reachable from the network.
     token = nil,
     protected_paths = {},
 
