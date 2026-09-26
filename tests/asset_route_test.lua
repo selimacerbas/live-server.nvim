@@ -55,10 +55,12 @@ eq(http_get(base .. "/__live/asset?p=missing.png&t=" .. TOKEN).status, 404, "mis
 eq(http_get(base .. "/__live/asset?t=" .. TOKEN).status, 404, "missing p param is 404")
 -- Containment is by the resolved path, not the spelling: a link inside the
 -- asset root that points above it was served by a lexical check (measured on
--- a mutant). A link that cannot be made, or is made and does not resolve
--- (Windows takes the / in its target unconverted), is skipped, counted.
+-- a mutant). The target is written with the platform's separator, since
+-- Windows took a / in it unconverted and the link did not resolve (measured
+-- on the hosted runner); a link that cannot be made or does not resolve is
+-- skipped, counted.
 local link = tmpdir .. "/src/link.txt"
-local linked, link_err = uv.fs_symlink("../secret.txt", link)
+local linked, link_err = uv.fs_symlink(".." .. package.config:sub(1, 1) .. "secret.txt", link)
 if linked and uv.fs_stat(link) then
     eq(
         http_get(base .. "/__live/asset?p=link.txt&t=" .. TOKEN).status,
