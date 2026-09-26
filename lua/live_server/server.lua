@@ -744,7 +744,7 @@ function S.start(cfg)
         end)
     end)
     if not ok then
-        error(bind_err or "listen failed")
+        error(bind_err or "listen failed", 0)
     end
 
     return inst
