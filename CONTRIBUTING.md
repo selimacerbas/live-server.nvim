@@ -55,10 +55,10 @@ A pull request Dependabot opens is machine-authored, keyed on the pull request's
 
 ### Moving the floor
 
-A release that moves the Neovim floor edits every place that states it, together (`git grep -n '0\.10'` and `git grep -n 'v1\.5\.0'` find them, beside harness comments that name a version they were measured on):
+A release that moves the Neovim floor edits every place that states it, together (`git grep -n '0\.10'` and `git grep -n 'v1\.5\.0'` find them, beside what states no floor: harness comments that name a version they were measured on, the CHANGELOG's release links and past release notes, and the tag history in the release steps):
 
 - `lua/live_server/floor.lua`: the check and the message, which the plugin file, the module and the smoke read;
-- `plugin/live_server.lua`: the refusers' description;
+- `plugin/live_server.lua`: the header comment and the refusers' description;
 - the README's requirements line and its plugin-author note (the floor message `live_server.server` and `live_server.util` raise), the vimdoc's REQUIREMENTS, SECURITY.md's supported versions and a CHANGELOG entry;
 - this file's prerequisites and job list;
 - `.github/workflows/ci.yml`: the `floor` job's version and name, `floor-below`'s version and name (the newest release below the floor), and the comments above both;
