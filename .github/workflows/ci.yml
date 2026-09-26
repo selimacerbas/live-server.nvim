@@ -92,16 +92,13 @@ jobs:
       - name: Below-floor smoke
         run: sh tests/floor_smoke.sh
 
-  # Measures the suites on Windows; the token fallback (no /dev/urandom) has
-  # no assertion of its own yet. It reports, and joins ci-ok once it has been
-  # green.
+  # The suites on Windows, gating as the other test jobs do; it joined ci-ok
+  # after three green hosted runs. The token fallback (no /dev/urandom) has
+  # no assertion of its own.
   windows:
     name: windows (nvim stable)
     runs-on: windows-latest
     timeout-minutes: 15
-    # On push and pull_request runs the conclusion follows ci-ok; a red here
-    # is read from this job's own conclusion and never blocks a merge.
-    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -297,7 +294,7 @@ jobs:
   # run of a pull request's head posts no green ci-ok that judged no commit.
   ci-ok:
     if: always()
-    needs: [test, floor, floor-below, lint-workflows, format, commits]
+    needs: [test, floor, floor-below, windows, lint-workflows, format, commits]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -307,10 +304,11 @@ jobs:
           TEST: ${{ needs.test.result }}
           FLOOR: ${{ needs.floor.result }}
           FLOOR_BELOW: ${{ needs.floor-below.result }}
+          WINDOWS: ${{ needs.windows.result }}
           LINT: ${{ needs.lint-workflows.result }}
           FORMAT: ${{ needs.format.result }}
           COMMITS: ${{ needs.commits.result }}
         run: |
-          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
+          echo "event=$EVENT test=$TEST floor=$FLOOR floor-below=$FLOOR_BELOW windows=$WINDOWS lint-workflows=$LINT format=$FORMAT commits=$COMMITS"
           [ "$COMMITS" = success ] || exit 1
-          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
+          [ "$TEST" = success ] && [ "$FLOOR" = success ] && [ "$FLOOR_BELOW" = success ] && [ "$WINDOWS" = success ] && [ "$LINT" = success ] && [ "$FORMAT" = success ] || exit 1
