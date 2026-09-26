@@ -1,6 +1,6 @@
 # Contributing
 
-Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text` and `make lint-blame` run here as they run in CI. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, whose formula brings shellcheck; a binary from <https://github.com/rhysd/actionlint/releases> does not, and without shellcheck on PATH actionlint skips its shell checks, so a local green can differ from CI's). The `floor` (Neovim 0.10.0), `windows` and `commits` jobs run only in CI; `floor-below` (Neovim 0.9.5) runs `tests/floor_smoke.sh`, which runs locally too with a Neovim below the floor first on PATH; the commit-msg hook below runs the `commits` job's policy locally. The `nightly` workflow runs the suites weekly against Neovim nightly; GitHub disables a scheduled workflow after 60 days without a commit, and `gh workflow enable nightly` turns it back on.
+Issues and PRs are welcome. This file names the commands the CI runs so a green PR is a local run away: `make test`, `make fmt-check`, `make lint-text`, `make lint-blame` and `make shellcheck` (the POSIX scripts and hooks read as sh, which the `lint-workflows` job runs with the actionlint image's shellcheck) run here as they run in CI. The `lint-workflows` job also runs actionlint, which no make target wraps: run `actionlint .github/workflows/*.yml` locally (`brew install actionlint`, whose formula brings shellcheck; a binary from <https://github.com/rhysd/actionlint/releases> does not, and without shellcheck on PATH actionlint skips its shell checks, so a local green can differ from CI's). The `floor` (Neovim 0.10.0), `windows` and `commits` jobs run only in CI; `floor-below` (Neovim 0.9.5) runs `tests/floor_smoke.sh`, which runs locally too with a Neovim below the floor first on PATH; the commit-msg hook below runs the `commits` job's policy locally. The `nightly` workflow runs the suites weekly against Neovim nightly; GitHub disables a scheduled workflow after 60 days without a commit, and `gh workflow enable nightly` turns it back on.
 
 You need Neovim 0.10 or newer, curl for the four suites that make HTTP requests, and bun for the formatter.
 
@@ -20,7 +20,7 @@ live-server.nvim and markdown-preview.nvim share their test harness, their hooks
 
 ## Format
 
-    make fmt        # StyLua, the version pinned in the Makefile; bun is the one prerequisite (make fmt-check is what CI runs; make lint-text and make lint-blame are the other gates; make test runs the suites)
+    make fmt        # StyLua, the version pinned in the Makefile; bun is the one prerequisite (make fmt-check is what CI runs; make lint-text, make lint-blame and make shellcheck are the other gates; make test runs the suites)
 
 The config is `.stylua.toml`. The one-time format commit is listed in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs`).
 
