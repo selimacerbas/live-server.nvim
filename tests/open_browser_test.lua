@@ -17,8 +17,10 @@ local opener = vim.fn.has("win32") == 1 and "cmd.exe" or (vim.fn.has("mac") == 1
 local real_open, real_jobstart, real_notify = vim.ui.open, vim.fn.jobstart, vim.notify
 
 -- One call of open_browser with vim.ui.open answering ui_result (a table of
--- its return values) and jobstart answering job (and, when exit is set,
--- calling on_exit with it); returns the jobstart calls and the notices.
+-- its return values) and jobstart answering job (a string raises it, as the
+-- real jobstart raises E475 for an opener that is not executable, and when
+-- exit is set on_exit is called with it); returns the jobstart calls and the
+-- notices.
 local function attempt(ui_result, job, exit)
     local calls, notices = {}, {}
     vim.ui.open = function()
@@ -26,6 +28,9 @@ local function attempt(ui_result, job, exit)
     end
     vim.fn.jobstart = function(argv, opts)
         calls[#calls + 1] = argv
+        if type(job) == "string" then
+            error(job)
+        end
         if exit ~= nil and job > 0 then
             opts.on_exit(job, exit)
         end
@@ -65,6 +70,14 @@ calls, notices = attempt({ nil, "vim.ui.open: no handler found" }, 7, 3)
 ok(
     #notices == 1 and notices[1].msg:find(URL, 1, true) ~= nil,
     "an opener that exits nonzero shows the URL to open by hand: " .. vim.inspect(notices)
+)
+calls, notices = attempt(
+    { nil, "vim.ui.open: no handler found" },
+    ("Vim:E475: Invalid value for argument cmd: '%s' is not executable"):format(opener)
+)
+ok(
+    #notices == 1 and notices[1].msg:find(URL, 1, true) ~= nil,
+    "an opener jobstart refuses as not executable shows the URL to open by hand: " .. vim.inspect(notices)
 )
 
 H.section("Section 3: vim.ui.open found an opener")

@@ -129,7 +129,9 @@ end
 -- vim.ui.open answers nil and a message when it finds no opener, without
 -- raising, so its result is read, not pcall's alone. The platform's opener
 -- is tried next, and when that cannot start or exits nonzero the URL is
--- shown to open by hand.
+-- shown to open by hand. jobstart raises E475 for an opener that is not
+-- executable (measured), the Linux case where vim.ui.open found none, so
+-- the raise counts as not started.
 function U.open_browser(url)
     local ok, handle = pcall(vim.ui.open, url)
     if ok and handle then
@@ -148,7 +150,7 @@ function U.open_browser(url)
         U.notify(("Could not open a browser; open %s by hand"):format(url), { notify = true }, "WARN")
     end
     vim.schedule(function()
-        local job = vim.fn.jobstart(argv, {
+        local started, job = pcall(vim.fn.jobstart, argv, {
             detach = true,
             on_exit = function(_, code)
                 if code ~= 0 then
@@ -156,7 +158,7 @@ function U.open_browser(url)
                 end
             end,
         })
-        if job <= 0 then
+        if not started or job <= 0 then
             by_hand()
         end
     end)
