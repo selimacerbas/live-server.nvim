@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The latest release, and `main` between releases. Older tags receive no fixes.
+The latest release and `main` between releases. The next release drops Neovim 0.8 and 0.9; from then on v1.5.0 receives no fixes.
 
 ## Reporting a vulnerability
 

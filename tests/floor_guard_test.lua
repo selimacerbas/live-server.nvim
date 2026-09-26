@@ -148,7 +148,10 @@ H.ok(documented ~= "", "the README's command table lists the commands: " .. docu
 local source_err = source_plugin()
 local message = require(MODULE .. ".floor").message
 H.ok(message:find("0.10", 1, true) ~= nil, "the floor text names the floor")
-H.ok(message:find("pin the plugin to v1.5.0", 1, true) ~= nil, "the floor text names the release to pin on 0.9")
+H.ok(
+    message:find("on Neovim 0.8 or 0.9 pin the plugin to v1.5.0", 1, true) ~= nil,
+    "the floor text names the release to pin on 0.8 and 0.9"
+)
 -- lazy.nvim's cmd and keys specs run the command they were given, so each
 -- documented one exists below the floor to say why.
 H.eq(source_err or defined(), documented, "every documented command is defined below the floor, and no other")
