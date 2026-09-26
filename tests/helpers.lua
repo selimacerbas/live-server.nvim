@@ -266,12 +266,13 @@ end
 local RTP_SYNTAX =
     "a name the runtimepath reads differently (a comma, a dollar sign, a glob character, a backslash, a brace, or a name ending in after)"
 
+-- parity: own lines begin (tests/parity.sh compares the rest with the sibling's copy)
 -- The checkout goes first on the runtimepath, by the name the helper was
 -- loaded through, and proves it is the copy require loads; the root it
 -- returns is H.root, canonical, and the refusals name canonical paths.
 -- markdown-preview.nvim's copy of this file is one source with this one
--- outside its H.live_server_floor block and H.rtp, indentation aside: its
--- H.rtp proves its own modules and then finds live-server as a dependency.
+-- outside these own lines, indentation aside: its H.rtp proves its own
+-- modules and then finds live-server as a dependency.
 function H.rtp()
     vim.opt.runtimepath:prepend(root_entry)
     for _, modname in ipairs({ "live_server.server", "live_server.util" }) do
@@ -282,6 +283,7 @@ function H.rtp()
     end
     return H.root
 end
+-- parity: own lines end
 
 function H.tmpdir()
     local dir = vim.fn.tempname()

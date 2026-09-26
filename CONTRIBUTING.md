@@ -12,6 +12,10 @@ runs every suite through `tests/run.sh`, the same loop CI runs, and then `tests/
 
     nvim --headless -u NONE -l tests/token_auth_test.lua
 
+## Shared files
+
+live-server.nvim and markdown-preview.nvim share their test harness, their hooks, the Makefile and the PR template. `tests/parity.sh` lists every shared file and how it is compared, and `make parity SIBLING=../markdown-preview.nvim` compares them with a sibling checkout. This repository's copy is the source: a change to a shared file lands here first and is copied.
+
 ## Format
 
     make fmt        # StyLua, the version pinned in the Makefile; bun is the one prerequisite (make fmt-check is what CI runs; make lint-text and make lint-blame are the other gates; make test runs the suites)
