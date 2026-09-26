@@ -6,7 +6,7 @@
 -- counted, where a host firewall intercepts them, which a control listener
 -- of this process tells apart from a server that does not answer.
 --
--- Run: nvim --headless -u NONE -l tests/host_binding_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/host_binding_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()

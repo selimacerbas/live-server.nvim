@@ -4,7 +4,7 @@
 --   - requires ?t=<token> when token auth is configured
 --   - rejects traversal (a symlink out of the root too), absolute paths, and schemes
 --
--- Run: nvim --headless -u NONE -l tests/asset_route_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/asset_route_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()

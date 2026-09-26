@@ -5,7 +5,7 @@
 -- without git's index (a git archive copy, a tarball) fails here, saying
 -- so, instead of checking nothing.
 --
--- Run: nvim --headless -u NONE -l tests/parse_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/parse_test.lua"
 
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()

@@ -5,7 +5,7 @@
 -- and the modules the plugin-author API loads refuse at every require; on a
 -- supported version the commands and the exit hook are defined.
 --
--- Run: nvim --headless -u NONE -l tests/floor_guard_test.lua
+-- Run: nvim --headless -u NONE -l "$PWD/tests/floor_guard_test.lua"
 local H = dofile(vim.fs.joinpath(vim.fs.dirname(debug.getinfo(1, "S").source:sub(2)), "helpers.lua"))
 H.isolate()
 H.rtp()
