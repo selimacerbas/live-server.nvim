@@ -126,25 +126,40 @@ function U.html_escape(s)
 end
 
 -- Open URL in default browser (portable)
+-- vim.ui.open answers nil and a message when it finds no opener, without
+-- raising, so its result is read, not pcall's alone. The platform's opener
+-- is tried next, and when that cannot start or exits nonzero the URL is
+-- shown to open by hand.
 function U.open_browser(url)
-    local ok = pcall(vim.ui.open, url)
-    if ok then
+    local ok, handle = pcall(vim.ui.open, url)
+    if ok and handle then
         return
     end
     local sys = (jit and jit.os) or uv.os_uname().sysname
+    local argv
     if sys == "Windows" or sys == "Windows_NT" then
-        vim.schedule(function()
-            vim.fn.jobstart({ "cmd.exe", "/c", "start", "", url }, { detach = true })
-        end)
+        argv = { "cmd.exe", "/c", "start", "", url }
     elseif sys == "OSX" or sys == "Darwin" then
-        vim.schedule(function()
-            vim.fn.jobstart({ "open", url }, { detach = true })
-        end)
+        argv = { "open", url }
     else
-        vim.schedule(function()
-            vim.fn.jobstart({ "xdg-open", url }, { detach = true })
-        end)
+        argv = { "xdg-open", url }
     end
+    local function by_hand()
+        U.notify(("Could not open a browser; open %s by hand"):format(url), { notify = true }, "WARN")
+    end
+    vim.schedule(function()
+        local job = vim.fn.jobstart(argv, {
+            detach = true,
+            on_exit = function(_, code)
+                if code ~= 0 then
+                    by_hand()
+                end
+            end,
+        })
+        if job <= 0 then
+            by_hand()
+        end
+    end)
 end
 
 -- Telescope presence
