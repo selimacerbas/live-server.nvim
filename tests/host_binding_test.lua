@@ -99,8 +99,10 @@ eq(r.status, 200, "loopback reachable on 0.0.0.0 bind")
 -- while a closed port reads 7, measured). A server that hangs or closes
 -- reads the same, so a control listener of this process on the same
 -- wildcard address, answering 200, is probed first: the firewall treats it
--- as it treats the server, so only a control that got no answer either
--- makes the server's failure a skip; a control that answered makes it red.
+-- as it treats the server, so a server probe of 28, 52 or 56 is a skip only
+-- when the control got no answer either. Any other server result, an HTTP
+-- status the firewall let through or a refused connect, is this plugin's
+-- red whatever the control got.
 -- lan_skipped says why the LAN probe did not measure; Section 3 skips on it.
 local function control_probe(ip)
     local tcp = uv.new_tcp()
@@ -134,7 +136,8 @@ if not (lan_ip and lan_ip ~= "127.0.0.1") then
 else
     control = control_probe(lan_ip)
     r = http_get(("http://%s:%d/"):format(lan_ip, port))
-    if r.status ~= 200 and control.status ~= 200 then
+    local no_answer = r.curl_exit == 28 or r.curl_exit == 52 or r.curl_exit == 56
+    if no_answer and control.status ~= 200 then
         lan_skipped = ("LAN IP %s answered neither the server (curl %d) nor a control listener (curl %d): a host firewall"):format(
             lan_ip,
             r.curl_exit,
@@ -147,7 +150,10 @@ if lan_skipped then
 else
     eq(
         ("status %d, curl %d"):format(r.status, r.curl_exit)
-            .. (r.status == 200 and "" or (", where the control got status %d"):format(control.status)),
+            .. (
+                r.status == 200 and ""
+                or (", where the control got status %d, curl %d"):format(control.status, control.curl_exit)
+            ),
         "status 200, curl 0",
         ("LAN IP %s reachable on 0.0.0.0 bind"):format(lan_ip)
     )
